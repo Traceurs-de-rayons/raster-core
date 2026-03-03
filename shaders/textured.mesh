@@ -1,0 +1,75 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+
+const uint kTrianglesPerWorkgroup = 32u;
+const uint kVerticesPerTriangle   = 3u;
+
+layout(local_size_x = kTrianglesPerWorkgroup, local_size_y = 1, local_size_z = 1) in;
+layout(triangles, max_vertices = kTrianglesPerWorkgroup * kVerticesPerTriangle, max_primitives = kTrianglesPerWorkgroup) out;
+
+struct VertexData {
+	vec3 pos;
+	vec3 color;
+	vec2 uv;
+};
+
+layout(set = 0, binding = 1) readonly buffer VertexBuffer {
+	VertexData vertices[];
+};
+
+layout(set = 0, binding = 2) readonly buffer IndexBuffer {
+	uint indices[];
+};
+
+layout(location = 0) out vec3 outColor[];
+layout(location = 1) out vec2 outTexCoord[];
+
+layout(push_constant) uniform PushConstants {
+	mat4 model;
+	mat4 view;
+	mat4 proj;
+	uint primitiveCount;
+	uint verticesPerPrimitive;
+	uint pad0;
+	uint pad1;
+} pc;
+
+void writeVertex(uint dstIndex, VertexData v) {
+	gl_MeshVerticesEXT[dstIndex].gl_Position = pc.proj * pc.view * pc.model * vec4(v.pos, 1.0);
+	outColor[dstIndex]   = v.color;
+	outTexCoord[dstIndex] = v.uv;
+}
+
+void main() {
+	const uint primitiveBase   = gl_WorkGroupID.x * kTrianglesPerWorkgroup;
+	const uint localPrimitive  = gl_LocalInvocationID.x;
+	const uint primitiveIndex  = primitiveBase + localPrimitive;
+	const uint vertsPerPrimitive = max(pc.verticesPerPrimitive, kVerticesPerTriangle);
+
+	uint remaining = 0u;
+	if (pc.primitiveCount > primitiveBase) {
+		remaining = pc.primitiveCount - primitiveBase;
+	}
+	const uint primitivesThisGroup = min(kTrianglesPerWorkgroup, remaining);
+
+	if (localPrimitive == 0u) {
+		SetMeshOutputsEXT(primitivesThisGroup * vertsPerPrimitive, primitivesThisGroup);
+	}
+	barrier();
+
+	if (primitiveIndex >= pc.primitiveCount || localPrimitive >= primitivesThisGroup) {
+		return;
+	}
+
+	const uint firstIndex = primitiveIndex * vertsPerPrimitive;
+	VertexData v0 = vertices[indices[firstIndex + 0u]];
+	VertexData v1 = vertices[indices[firstIndex + 1u]];
+	VertexData v2 = vertices[indices[firstIndex + 2u]];
+
+	const uint vertexOffset = localPrimitive * vertsPerPrimitive;
+	gl_PrimitiveTriangleIndicesEXT[localPrimitive] = uvec3(vertexOffset, vertexOffset + 1u, vertexOffset + 2u);
+
+	writeVertex(vertexOffset + 0u, v0);
+	writeVertex(vertexOffset + 1u, v1);
+	writeVertex(vertexOffset + 2u, v2);
+}
