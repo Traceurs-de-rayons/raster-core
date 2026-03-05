@@ -30,10 +30,19 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 	endif()
 endif()
 
+file(GLOB SRC_CHILDREN RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/*)
+set(SRC_INCLUDE_DIRS)
+foreach(CHILD ${SRC_CHILDREN})
+	if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/${CHILD})
+		list(APPEND SRC_INCLUDE_DIRS "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/${CHILD}>")
+	endif()
+endforeach()
+
 target_include_directories(raster-core
 	PUBLIC
 		$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 		$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+		${SRC_INCLUDE_DIRS}
 		$<INSTALL_INTERFACE:include>
 )
 
@@ -50,29 +59,67 @@ target_link_libraries(raster-core
 set_target_properties(raster-core PROPERTIES OUTPUT_NAME "raster-core")
 
 target_compile_definitions(raster-core
-	PUBLIC 
+	PUBLIC
 		RASTER_CORE_SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders"
 		RASTER_CORE_SHADER_FALLBACK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders"
 )
 
-# Shader build and installation - copy precompiled .spv shaders
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
-	add_custom_target(raster_core_shaders ALL
-		COMMAND ${CMAKE_COMMAND} -E copy_directory
-		${CMAKE_CURRENT_SOURCE_DIR}/shaders
-		${CMAKE_CURRENT_BINARY_DIR}/shaders
-		COMMENT "Copying raster-core shaders to build directory"
+# Shader compilation with Slang
+find_program(SLANGC slangc)
+if(NOT SLANGC)
+	message(FATAL_ERROR "slangc not found. Please install Slang compiler.")
+endif()
+
+file(GLOB SLANG_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.slang")
+
+# Create output directory
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+
+# Compile each Slang shader to SPIR-V
+set(COMPILED_SHADERS)
+foreach(SHADER_FILE ${SLANG_SHADERS})
+	get_filename_component(SHADER_NAME ${SHADER_FILE} NAME_WE)
+	get_filename_component(SHADER_EXT ${SHADER_FILE} EXT)
+
+	# Determine shader stage
+	if(${SHADER_FILE} MATCHES "\\.vert\\.slang$")
+		set(STAGE "vertex")
+		set(OUTPUT_NAME "${SHADER_NAME}.vert.spv")
+	elseif(${SHADER_FILE} MATCHES "\\.frag\\.slang$")
+		set(STAGE "fragment")
+		set(OUTPUT_NAME "${SHADER_NAME}.frag.spv")
+	elseif(${SHADER_FILE} MATCHES "\\.comp\\.slang$")
+		set(STAGE "compute")
+		set(OUTPUT_NAME "${SHADER_NAME}.comp.spv")
+	elseif(${SHADER_FILE} MATCHES "\\.mesh\\.slang$")
+		set(STAGE "mesh")
+		set(OUTPUT_NAME "${SHADER_NAME}.mesh.spv")
+	else()
+		message(WARNING "Unknown shader stage for ${SHADER_FILE}, skipping")
+		continue()
+	endif()
+
+	set(OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/shaders/${OUTPUT_NAME})
+
+	add_custom_command(
+		OUTPUT ${OUTPUT_FILE}
+		COMMAND ${SLANGC}
+			-target spirv
+			-stage ${STAGE}
+			-o ${OUTPUT_FILE}
+			${SHADER_FILE}
+		DEPENDS ${SHADER_FILE}
+		COMMENT "Compiling Slang shader: ${SHADER_NAME} (${STAGE})"
+		VERBATIM
 	)
 
-	add_custom_target(raster_core_shaders_update
-		COMMAND ${CMAKE_COMMAND} -E copy_directory
-		${CMAKE_CURRENT_SOURCE_DIR}/shaders
-		${CMAKE_CURRENT_BINARY_DIR}/shaders
-		COMMENT "Updating raster-core shaders in build directory"
-	)
-else()
-	message(WARNING "raster-core shaders directory not found, skipping shader copy")
-endif()
+	list(APPEND COMPILED_SHADERS ${OUTPUT_FILE})
+endforeach()
+
+add_custom_target(raster_core_shaders ALL
+	DEPENDS ${COMPILED_SHADERS}
+	COMMENT "Building all Slang shaders"
+)
 
 include(GNUInstallDirs)
 install(TARGETS raster-core

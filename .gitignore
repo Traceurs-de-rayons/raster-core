@@ -1,0 +1,54 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+bin/
+lib/
+
+# Compiled binaries
+*.exe
+*.out
+*.app
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.o
+*.obj
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Compilation database
+compile_commands.json
+
+# Compiled shaders (SPIR-V binaries are generated from .slang sources)
+*.spv
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-*
+.clangd/
+.cache/
+
+# Logs
+*.log
+
+# Core dumps
+core
+core.*
+
+# Temporary files
+*.tmp
+*.temp
