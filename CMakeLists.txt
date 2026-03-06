@@ -47,10 +47,14 @@ target_include_directories(raster-core
 )
 
 # Add scene-core dependency
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../scene-core scene-core-build)
+if(NOT TARGET scene-core)
+	add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../scene-core scene-core-build)
+endif()
 
 # Add render-api dependency
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../render-api render-api-build)
+if(NOT TARGET render-api)
+	add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../render-api render-api-build)
+endif()
 
 target_link_libraries(raster-core
 	PUBLIC scene-core render-api
