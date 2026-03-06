@@ -1,4 +1,4 @@
-#include "Internal.hpp"
+#include "internal.hpp"
 
 namespace RasterCore {
 

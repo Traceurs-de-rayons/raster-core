@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ViewportManager.hpp"
-#include "RasterCore.hpp"
+#include "viewportManager.hpp"
+#include "rasterCore.hpp"
 #include "buffer.hpp"
 #include "image.hpp"
 #include <unordered_map>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "RasterTypes.hpp"
+#include "rasterTypes.hpp"
 #include <memory>
 #include <string>
 #include <vector>

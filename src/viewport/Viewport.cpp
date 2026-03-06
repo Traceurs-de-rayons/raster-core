@@ -1,6 +1,6 @@
-#include "Viewport.hpp"
-#include "ViewportImpl.hpp"
-#include "RasterCore.hpp"
+#include "viewport.hpp"
+#include "viewportImpl.hpp"
+#include "rasterCore.hpp"
 #include <iostream>
 
 namespace RasterCore {

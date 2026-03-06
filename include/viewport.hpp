@@ -1,7 +1,7 @@
 #ifndef VIEWPORT_HPP
 # define VIEWPORT_HPP
 
-# include "RasterTypes.hpp"
+# include "rasterTypes.hpp"
 # include <cstdint>
 # include <string>
 # include <memory>

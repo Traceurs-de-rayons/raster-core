@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Viewport.hpp"
-#include "RasterCore.hpp"
+#include "viewport.hpp"
+#include "rasterCore.hpp"
 #include <SDL2/SDL.h>
 #include <memory>
 #include <string>

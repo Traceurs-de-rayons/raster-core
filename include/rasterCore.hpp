@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Vertex.hpp"
-#include "RasterTypes.hpp"
+#include "rasterTypes.hpp"
 #include "core-utils.hpp"
 
 #include <SDL2/SDL.h>

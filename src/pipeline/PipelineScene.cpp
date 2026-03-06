@@ -1,5 +1,5 @@
-#include "Internal.hpp"
-#include "Viewport.hpp"
+#include "internal.hpp"
+#include "viewport.hpp"
 
 #include <iostream>
 

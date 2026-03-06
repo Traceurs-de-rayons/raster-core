@@ -1,5 +1,5 @@
-#include "RasterCore.hpp"
-#include "Internal.hpp"
+#include "rasterCore.hpp"
+#include "internal.hpp"
 
 namespace RasterCore {
 
