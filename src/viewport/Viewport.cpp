@@ -28,7 +28,7 @@ Viewport::Impl::Impl(uint32_t id, const std::string& name, uint32_t width, uint3
 	camera.farPlane = 1000.0f;
 }
 
-bool Viewport::Impl::initializePipeline(const Scene& scene) {
+bool Viewport::Impl::initializePipeline() {
 	if (pipeline)
 		return true;
 
@@ -52,7 +52,10 @@ bool Viewport::Impl::initializePipeline(const Scene& scene) {
 		options.buffer.colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 	}
 
-	auto result = initRasterisation(scene, options);
+	// We don't use RasterCore::Scene anymore; geometry comes from SharedGpuResources only.
+	// Keep the Scene parameter for legacy API compatibility but ignore it internally.
+	Scene dummyScene{};
+	auto result = initRasterisation(dummyScene, options);
 	if (!result.success || !result.pipeline) {
 		std::cerr << "Viewport: Failed to initialize pipeline: " << result.errorMessage << std::endl;
 		return false;
@@ -68,8 +71,16 @@ std::unique_ptr<Viewport> Viewport::Impl::create(uint32_t id, const std::string&
 	return std::unique_ptr<Viewport>(new Viewport(id, name, width, height, outputType, window, sharedResources));
 }
 
-Viewport::Viewport(uint32_t id, const std::string& name, uint32_t width, uint32_t height, ViewportOutput outputType, SDL_Window* window, SharedGpuResources* sharedResources) : impl_(std::make_unique<Impl>(id, name, width, height, outputType, window, sharedResources))
+Viewport::Viewport(uint32_t id, const std::string& name, uint32_t width, uint32_t height, ViewportOutput outputType, SDL_Window* window, SharedGpuResources* sharedResources)
+	: impl_(std::make_unique<Impl>(id, name, width, height, outputType, window, sharedResources))
 {
+	// Build pipeline immediately for this viewport so that getVulkanImage/View
+	// is ready when the UI first queries it.
+	if (impl_) {
+		if (!impl_->initializePipeline()) {
+			std::cerr << "Viewport '" << name << "': Failed to initialize pipeline on creation" << std::endl;
+		}
+	}
 	std::cout << "Viewport '" << impl_->name << "' created (ID: " << impl_->id << ", " << impl_->width << "x" << impl_->height << ")" << std::endl;
 }
 
@@ -131,22 +142,17 @@ const Camera& Viewport::getCamera() const {
 	return impl_ ? impl_->camera : dummy;
 }
 
-void Viewport::updateScene(const Scene& scene) {
-	if (!impl_) {
-		return;
-	}
-
-	if (!impl_->pipeline) {
-		impl_->initializePipeline(scene);
-		if (!impl_->pipeline)
-			return;
-	}
-	impl_->pipeline->updateScene(scene);
-}
 
 void Viewport::render() {
-	if (!impl_ || !impl_->active || !impl_->pipeline)
+	if (!impl_ || !impl_->active)
 		return;
+
+	// Lazy safety: ensure pipeline is built even if constructor init failed earlier.
+	if (!impl_->pipeline) {
+		if (!impl_->initializePipeline())
+			return;
+	}
+
 	impl_->pipeline->setCamera(impl_->camera);
 	impl_->pipeline->drawFrame();
 }

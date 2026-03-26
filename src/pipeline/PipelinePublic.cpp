@@ -47,29 +47,9 @@ void RasterPipeline::waitIdle() {
 		vkDeviceWaitIdle(impl_->gpu->device);
 }
 
-void RasterPipeline::updateScene(const Scene& newScene) {
-	if (!impl_)
-		return;
 
-	impl_->scene = newScene;
-	impl_->activeCamera = newScene.camera;
 
-	if (!impl_->task || !impl_->pipeline) {
-		std::string error;
-		if (!impl_->rebuildPipeline(error))
-			throw std::runtime_error(error);
-		return;
-	}
 
-	std::string error;
-	if (!impl_->updateSceneData(error))
-		std::cerr << "RasterCore: Failed to update scene data: " << error << std::endl;
-}
-
-const Scene& RasterPipeline::scene() const {
-	static Scene emptyScene;
-	return impl_ ? impl_->scene : emptyScene;
-}
 
 void RasterPipeline::setModelTransform(const cu::math::mat4& transform) {
 	if (impl_) {
@@ -128,10 +108,11 @@ Camera RasterPipeline::getCamera() const {
 	return {};
 }
 
-InitResult initRasterisation(const Scene& scene, const InitOptions& options) {
+InitResult initRasterisation(const Scene& /*scene*/, const InitOptions& options) {
 	InitResult result;
 	auto impl = std::make_unique<RasterPipeline::Impl>();
-	if (!impl->initialize(scene, options, result.errorMessage)) {
+	// The Scene is no longer used; initialization relies only on InitOptions
+	if (!impl->initialize(options, result.errorMessage)) {
 		result.success = false;
 		return result;
 	}

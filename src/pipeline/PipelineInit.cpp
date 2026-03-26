@@ -4,14 +4,13 @@
 
 namespace RasterCore {
 
-bool RasterPipeline::Impl::initialize(const Scene& sceneInput, InitOptions initOptions, std::string& errorMessage) {
+bool RasterPipeline::Impl::initialize(InitOptions initOptions, std::string& errorMessage) {
 	options = std::move(initOptions);
 	shaderConfig = options.shaders;
 	target = options.target;
 	bufferConfig = options.buffer;
 	windowConfig = options.window;
-	scene = sceneInput;
-	activeCamera = sceneInput.camera;
+	activeCamera = Camera{};
 	modelTransform = cu::math::mat4::identity();
 
 	if (target == OutputTarget::Window) {

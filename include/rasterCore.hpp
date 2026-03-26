@@ -53,6 +53,9 @@ struct TextureData {
 	bool isValid() const { return !pixels.empty() && width > 0 && height > 0; }
 };
 
+// NOTE: Scene is deprecated from the public RasterPipeline API and kept only
+// for legacy code paths. New code should drive RasterPipeline purely through
+// SharedGpuResources + Camera.
 struct Scene {
 	std::vector<Triangle> triangles;
 	std::vector<TextureData> textures;
@@ -113,6 +116,8 @@ struct InitResult {
 	std::shared_ptr<RasterPipeline> pipeline;
 };
 
+// NOTE: Scene parameter is kept for legacy callers; new code should ignore it
+// and drive RasterPipeline purely via SharedGpuResources + InitOptions.
 InitResult initRasterisation(const Scene& scene, const InitOptions& options = InitOptions());
 
 class RasterPipeline {
@@ -126,13 +131,13 @@ class RasterPipeline {
 
 	void drawFrame();
 	void waitIdle();
-	void updateScene(const Scene& scene);
+
+	// Scene-based updating is deprecated; geometry comes from SharedGpuResources.
 	void setCamera(const Camera& camera);
 	Camera getCamera() const;
 	void setModelTransform(const cu::math::mat4& transform);
 	cu::math::mat4 getModelTransform() const;
 
-	const Scene& scene() const;
 	OutputTarget target() const;
 	uint32_t width() const;
 	uint32_t height() const;

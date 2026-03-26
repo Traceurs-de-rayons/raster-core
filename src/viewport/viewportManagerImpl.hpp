@@ -17,7 +17,6 @@ struct ViewportManager::Impl {
 	std::vector<std::unique_ptr<Viewport>> viewports;
 	std::unordered_map<std::string, size_t> nameToIndex;
 	std::unordered_map<uint32_t, size_t> idToIndex;
-	Scene sharedScene;
 	SharedGpuResources sharedResources;
 	int nextUnnamedId;
 
@@ -35,7 +34,7 @@ struct ViewportManager::Impl {
 	void removeViewportAtIndex(size_t index);
 
 	bool createSharedGpuIfNeeded();
-	void updateSharedResources(const Scene& scene);
+	void updateSharedResources();
 	void destroySharedResources();
 };
 

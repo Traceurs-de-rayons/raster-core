@@ -65,7 +65,7 @@ struct RasterPipeline::Impl {
 	uint32_t height = 0;
 	VkFormat colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
-	bool initialize(const Scene& sceneInput, InitOptions initOptions, std::string& errorMessage);
+	bool initialize(InitOptions initOptions, std::string& errorMessage);
 	bool rebuildPipeline(std::string& errorMessage);
 	bool updateSceneData(std::string& errorMessage);
 	bool configurePipelineShaders(std::string& errorMessage);

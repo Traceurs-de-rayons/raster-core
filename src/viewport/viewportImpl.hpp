@@ -27,7 +27,7 @@ struct Viewport::Impl {
 
 	Impl(uint32_t id, const std::string& name, uint32_t width, uint32_t height, ViewportOutput outputType, SDL_Window* window, SharedGpuResources* sharedResources);
 
-	bool initializePipeline(const Scene& scene);
+	bool initializePipeline();
 	static std::unique_ptr<Viewport> create(uint32_t id, const std::string& name, uint32_t width, uint32_t height, ViewportOutput outputType, SDL_Window* window = nullptr, SharedGpuResources* sharedResources = nullptr);
 };
 

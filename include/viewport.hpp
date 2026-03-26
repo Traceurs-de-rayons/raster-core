@@ -29,31 +29,33 @@ class Viewport {
 		Viewport(Viewport&&) noexcept;
 		Viewport& operator=(Viewport&&) noexcept;
 
-		uint32_t				getWidth() const;
-		uint32_t				getHeight() const;
-		uint32_t				getId() const;
-		const std::string&		getName() const;
+		uint32_t		getWidth() const;
+		uint32_t		getHeight() const;
+		uint32_t		getId() const;
+		const std::string& getName() const;
 
-		void					setRenderMode(RenderMode mode);
-		RenderMode				getRenderMode() const;
+		void			setRenderMode(RenderMode mode);
+		RenderMode		getRenderMode() const;
 
-		void					setActive(bool active);
-		bool					isActive() const;
+		void			setActive(bool active);
+		bool			isActive() const;
 
-		Camera&					getCamera();
-		const Camera&			getCamera() const;
+		Camera&			getCamera();
+		const Camera&	getCamera() const;
 
-		void					updateScene(const Scene& scene);
-		void					render();
+		// Render the viewport. The underlying pipeline is lazily built per-viewport
+		// on first call to render(), using the shared GPU resources.
+		void			render();
 
 		RasterPipeline*			getPipeline();
 		const RasterPipeline*	getPipeline() const;
 
 		const unsigned char*	getImageData() const;
 		size_t					getImageDataSize() const;
+
 		void*					getVulkanImage() const;
 		void*					getVulkanImageView() const;
-	};
+};
 
 }
 

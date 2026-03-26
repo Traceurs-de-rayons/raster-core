@@ -69,7 +69,7 @@ bool ViewportManager::Impl::createSharedGpuIfNeeded() {
 	return true;
 }
 
-void ViewportManager::Impl::updateSharedResources(const Scene& scene) {
+void ViewportManager::Impl::updateSharedResources() {
 	if (!createSharedGpuIfNeeded()) {
 		std::cerr << "ViewportManager: Cannot update shared resources - GPU not available" << std::endl;
 		return;
@@ -86,105 +86,20 @@ void ViewportManager::Impl::updateSharedResources(const Scene& scene) {
 	std::vector<GpuVertex> vertices;
 	std::vector<uint32_t> indices;
 
-	vertices.reserve(scene.triangles.size() * 3);
-	indices.reserve(scene.triangles.size() * 3);
-
-	uint32_t nextIndex = 0;
-	uint32_t minTexId = UINT32_MAX;
-	uint32_t maxTexId = 0;
-
-	int vertexDebugCount = 0;
-	for (const auto& triangle : scene.triangles) {
-		for (int i = 0; i < 3; ++i) {
-			const auto& src = triangle.vertices[i];
-			GpuVertex dst{};
-			dst.position[0] = src.pos.x;
-			dst.position[1] = src.pos.y;
-			dst.position[2] = src.pos.z;
-
-			dst.color[0] = 1.0f;
-			dst.color[1] = 1.0f;
-			dst.color[2] = 1.0f;
-
-			dst.uv[0] = src.uv.x;
-			dst.uv[1] = src.uv.y;
-
-			dst.textureId = src.textureId;
-			dst.modelMatrixId = src.modelMatrixId;
-
-			if (src.textureId < minTexId) minTexId = src.textureId;
-			if (src.textureId > maxTexId) maxTexId = src.textureId;
-
-			vertices.push_back(dst);
-			indices.push_back(nextIndex++);
-		}
+	if (sharedResources.vertexBuffer == nullptr || sharedResources.indexBuffer == nullptr) {
+		// No external resources provided, nothing to build here anymore.
+		// The expectation is that external code fills SharedGpuResources directly.
+		sharedResources.vertexCount = 0;
+		sharedResources.indexCount = 0;
+		return;
 	}
 
-	sharedVertexBuffer.destroy();
-	sharedIndexBuffer.destroy();
+	// When external SharedGpuResources are provided, we only need to ensure the GPU is ready.
+	// The actual buffers are owned and managed externally, so we don't rebuild them here.
 
-	if (!vertices.empty()) {
-		sharedVertexBuffer = renderApi::createVertexBuffer(sharedGpu, vertices);
-		if (sharedVertexBuffer.isValid()) {
-			sharedResources.vertexBuffer = &sharedVertexBuffer;
-			sharedResources.vertexCount = static_cast<uint32_t>(vertices.size());
-		}
-	}
-
-	if (!indices.empty()) {
-		sharedIndexBuffer = renderApi::createIndexBuffer(sharedGpu, indices);
-		if (sharedIndexBuffer.isValid()) {
-			sharedResources.indexBuffer = &sharedIndexBuffer;
-			sharedResources.indexCount = static_cast<uint32_t>(indices.size());
-		}
-	}
-
-	if (!scene.modelMatrices.empty()) {
-		sharedModelMatrixBuffer.destroy();
-		sharedModelMatrixBuffer = renderApi::createStorageBuffer(sharedGpu, scene.modelMatrices);
-		if (sharedModelMatrixBuffer.isValid()) {
-			sharedResources.modelMatrixBuffer = &sharedModelMatrixBuffer;
-			std::cout << "=== Model matrix buffer created: " << scene.modelMatrices.size() << " matrices ===" << std::endl;
-
-			for (size_t i = 0; i < std::min<size_t>(6, scene.modelMatrices.size()); ++i) {
-				const auto& mat = scene.modelMatrices[i];
-				std::cout << "  Matrix[" << i << "] Translation: ("
-						  << mat.m[3][0] << ", " << mat.m[3][1] << ", " << mat.m[3][2] << ")" << std::endl;
-			}
-			std::cout << "=====================================================" << std::endl;
-		}
-	}
-
-	sharedTextures.clear();
-
-	if (scene.textures.empty()) {
-		std::vector<unsigned char> whitePixel = {255, 255, 255, 255};
-		renderApi::Texture defaultTex = renderApi::createTexture2D(
-			sharedGpu, 1, 1, VK_FORMAT_R8G8B8A8_UNORM,
-			whitePixel.data(), whitePixel.size(), false
-		);
-		sharedTextures.push_back(std::move(defaultTex));
-	} else {
-		for (size_t i = 0; i < scene.textures.size(); ++i) {
-			const auto& texData = scene.textures[i];
-			renderApi::Texture gpuTex = renderApi::createTexture2D(
-				sharedGpu, texData.width, texData.height, VK_FORMAT_R8G8B8A8_UNORM,
-				texData.pixels.data(), texData.pixels.size(), false
-			);
-
-			if (!gpuTex.isValid()) {
-				std::vector<unsigned char> whitePixel = {255, 255, 255, 255};
-				gpuTex = renderApi::createTexture2D(
-					sharedGpu, 1, 1, VK_FORMAT_R8G8B8A8_UNORM,
-					whitePixel.data(), whitePixel.size(), false
-				);
-			}
-
-			sharedTextures.push_back(std::move(gpuTex));
-		}
-	}
-
-	sharedResources.textures = &sharedTextures;
+	// Do not create or destroy internal vertex/index/model buffers anymore here.
+	// SharedGpuResources::vertexBuffer / indexBuffer / modelMatrixBuffer / textures
+	// are assumed to be owned and managed externally.
 }
 
 void ViewportManager::Impl::destroySharedResources() {
@@ -245,6 +160,25 @@ ViewportManager& ViewportManager::operator=(ViewportManager&& other) noexcept {
 	return *this;
 }
 
+bool ViewportManager::init() {
+	if (!impl_)
+		return false;
+	// Ensure the shared GPU exists; this will also set sharedResources.gpu.
+	if (!impl_->createSharedGpuIfNeeded()) {
+		std::cerr << "ViewportManager::init: Failed to create shared GPU" << std::endl;
+		return false;
+	}
+	return true;
+}
+
+SharedGpuResources* ViewportManager::getSharedResources() {
+	return impl_ ? &impl_->sharedResources : nullptr;
+}
+
+const SharedGpuResources* ViewportManager::getSharedResources() const {
+	return impl_ ? &impl_->sharedResources : nullptr;
+}
+
 Viewport* ViewportManager::addViewport(SDL_Window* window, const std::string& name) {
 	if (!impl_)
 		return nullptr;
@@ -266,9 +200,6 @@ Viewport* ViewportManager::addViewport(SDL_Window* window, const std::string& na
 
 	uint32_t id = Viewport::Impl::nextId++;
 	auto viewport = Viewport::Impl::create(id, viewportName, w, h, ViewportOutput::Window, window, &impl_->sharedResources);
-
-	if (!impl_->sharedScene.triangles.empty() || !impl_->sharedScene.textures.empty())
-		viewport->updateScene(impl_->sharedScene);
 
 	auto* ptr = viewport.get();
 	size_t index = impl_->viewports.size();
@@ -294,9 +225,6 @@ Viewport* ViewportManager::addViewport(uint32_t width, uint32_t height, const st
 
 	uint32_t id = Viewport::Impl::nextId++;
 	auto viewport = Viewport::Impl::create(id, viewportName, width, height, ViewportOutput::Buffer, nullptr, &impl_->sharedResources);
-
-	if (!impl_->sharedScene.triangles.empty() || !impl_->sharedScene.textures.empty())
-		viewport->updateScene(impl_->sharedScene);
 
 	auto* ptr = viewport.get();
 	size_t index = impl_->viewports.size();
@@ -366,18 +294,25 @@ const std::vector<std::unique_ptr<Viewport>>& ViewportManager::getViewports() co
 	return impl_ ? impl_->viewports : empty;
 }
 
-void ViewportManager::updateScene(const Scene& scene) {
+void ViewportManager::setSharedResources(SharedGpuResources* resources) {
 	if (!impl_)
 		return;
 
-	impl_->sharedScene = scene;
-	impl_->updateSharedResources(scene);
+	if (!resources) {
+		impl_->sharedResources.gpu = nullptr;
+		impl_->sharedResources.vertexBuffer = nullptr;
+		impl_->sharedResources.indexBuffer = nullptr;
+		impl_->sharedResources.modelMatrixBuffer = nullptr;
+		impl_->sharedResources.textures = nullptr;
+		impl_->sharedResources.indexCount = 0;
+		impl_->sharedResources.vertexCount = 0;
+		return;
+	}
 
-	for (auto& viewport : impl_->viewports)
-		if (viewport)
-			viewport->updateScene(scene);
+	impl_->sharedResources = *resources;
 
-	std::cout << "ViewportManager: Updated scene for " << impl_->viewports.size() << " viewports" << std::endl;
+	// Informational log only; pipelines will pick up sharedResources when rebuilt.
+	std::cout << "ViewportManager: External SharedGpuResources set" << std::endl;
 }
 
 void ViewportManager::renderAll() {
