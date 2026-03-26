@@ -14,7 +14,6 @@
 # include <array>
 # include <cstdint>
 # include <filesystem>
-# include <memory>
 # include <string>
 # include <vector>
 
@@ -39,12 +38,11 @@ struct GpuVertex {
 	uint32_t modelMatrixId;
 };
 
-} // namespace RasterCore::internal
+}
 
 namespace RasterCore {
 
 struct RasterPipeline::Impl {
-	Scene scene;
 	InitOptions options;
 	OutputTarget target = OutputTarget::Buffer;
 	BufferOutputConfig bufferConfig{};
@@ -67,7 +65,6 @@ struct RasterPipeline::Impl {
 
 	bool initialize(InitOptions initOptions, std::string& errorMessage);
 	bool rebuildPipeline(std::string& errorMessage);
-	bool updateSceneData(std::string& errorMessage);
 	bool configurePipelineShaders(std::string& errorMessage);
 	bool ensureDeviceBuffer(std::string& errorMessage);
 	bool ensureCameraUniformBuffer(std::string& errorMessage);
@@ -78,6 +75,6 @@ struct RasterPipeline::Impl {
 	void destroyGpuTask();
 };
 
-} // namespace RasterCore
+}
 
-#endif // RASTER_CORE_INTERNAL_HPP
+#endif

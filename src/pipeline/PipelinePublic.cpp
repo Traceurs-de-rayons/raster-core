@@ -47,10 +47,6 @@ void RasterPipeline::waitIdle() {
 		vkDeviceWaitIdle(impl_->gpu->device);
 }
 
-
-
-
-
 void RasterPipeline::setModelTransform(const cu::math::mat4& transform) {
 	if (impl_) {
 		impl_->modelTransform = transform;
@@ -108,10 +104,9 @@ Camera RasterPipeline::getCamera() const {
 	return {};
 }
 
-InitResult initRasterisation(const Scene& /*scene*/, const InitOptions& options) {
+InitResult initRasterisation(const InitOptions& options) {
 	InitResult result;
 	auto impl = std::make_unique<RasterPipeline::Impl>();
-	// The Scene is no longer used; initialization relies only on InitOptions
 	if (!impl->initialize(options, result.errorMessage)) {
 		result.success = false;
 		return result;

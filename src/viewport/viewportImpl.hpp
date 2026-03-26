@@ -9,7 +9,6 @@
 namespace RasterCore {
 
 class RasterPipeline;
-struct Scene;
 
 struct Viewport::Impl {
 	uint32_t						id;

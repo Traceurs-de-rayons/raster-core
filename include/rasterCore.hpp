@@ -53,18 +53,6 @@ struct TextureData {
 	bool isValid() const { return !pixels.empty() && width > 0 && height > 0; }
 };
 
-// NOTE: Scene is deprecated from the public RasterPipeline API and kept only
-// for legacy code paths. New code should drive RasterPipeline purely through
-// SharedGpuResources + Camera.
-struct Scene {
-	std::vector<Triangle> triangles;
-	std::vector<TextureData> textures;
-	std::vector<cu::math::mat4> modelMatrices;
-	Camera camera{};
-
-	bool empty() const { return triangles.empty(); }
-};
-
 struct BufferOutputConfig {
 	uint32_t width = 1280;
 	uint32_t height = 720;
@@ -105,7 +93,7 @@ struct InitOptions {
 	std::vector<std::string> instanceExtensions{};
 	std::vector<std::string> instanceLayers{};
 	std::string gpuName{};
-	SharedGpuResources* sharedResources = nullptr; // Optional: use shared buffers/textures
+	SharedGpuResources* sharedResources = nullptr;
 };
 
 class RasterPipeline;
@@ -116,9 +104,7 @@ struct InitResult {
 	std::shared_ptr<RasterPipeline> pipeline;
 };
 
-// NOTE: Scene parameter is kept for legacy callers; new code should ignore it
-// and drive RasterPipeline purely via SharedGpuResources + InitOptions.
-InitResult initRasterisation(const Scene& scene, const InitOptions& options = InitOptions());
+InitResult initRasterisation(const InitOptions& options = InitOptions());
 
 class RasterPipeline {
   public:
@@ -132,7 +118,6 @@ class RasterPipeline {
 	void drawFrame();
 	void waitIdle();
 
-	// Scene-based updating is deprecated; geometry comes from SharedGpuResources.
 	void setCamera(const Camera& camera);
 	Camera getCamera() const;
 	void setModelTransform(const cu::math::mat4& transform);
@@ -148,8 +133,8 @@ class RasterPipeline {
 	VkRenderPass getRenderPass();
 	
 	// Get render target image for ImGui display (only for Buffer output)
-	void* getColorImage() const; // Returns VkImage
-	void* getColorImageView() const; // Returns VkImageView
+	void* getColorImage() const;
+	void* getColorImageView() const;
 
   private:
 	struct Impl;
@@ -157,7 +142,7 @@ class RasterPipeline {
 
 	explicit RasterPipeline(std::unique_ptr<Impl> impl);
 
-	friend InitResult initRasterisation(const Scene&, const InitOptions&);
+	friend InitResult initRasterisation(const InitOptions&);
 };
 
 } // namespace RasterCore

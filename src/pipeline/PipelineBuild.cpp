@@ -115,10 +115,6 @@ bool RasterPipeline::Impl::configurePipelineShaders(std::string &errorMessage) {
   return true;
 }
 
-bool RasterPipeline::Impl::updateSceneData(std::string &errorMessage) {
-  std::cout << "RasterCore: Rebuilding pipeline for shared resources"
-            << std::endl;
-  return rebuildPipeline(errorMessage);
-}
+
 
 }

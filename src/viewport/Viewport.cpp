@@ -45,17 +45,14 @@ bool Viewport::Impl::initializePipeline() {
 		options.window.window = window;
 		options.window.presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
 		options.window.swapchainImageCount = 3;
-	} else {
-		options.target = OutputTarget::Buffer;
-		options.buffer.width = width;
-		options.buffer.height = height;
-		options.buffer.colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
-	}
+	    } else {
+	        options.target = OutputTarget::Buffer;
+	        options.buffer.width = width;
+	        options.buffer.height = height;
+	        options.buffer.colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+	    }
 
-	// We don't use RasterCore::Scene anymore; geometry comes from SharedGpuResources only.
-	// Keep the Scene parameter for legacy API compatibility but ignore it internally.
-	Scene dummyScene{};
-	auto result = initRasterisation(dummyScene, options);
+	    auto result = initRasterisation(options);
 	if (!result.success || !result.pipeline) {
 		std::cerr << "Viewport: Failed to initialize pipeline: " << result.errorMessage << std::endl;
 		return false;
