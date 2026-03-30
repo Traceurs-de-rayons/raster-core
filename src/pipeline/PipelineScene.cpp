@@ -5,8 +5,6 @@
 
 namespace RasterCore {
 
-
-
 bool RasterPipeline::Impl::ensureDeviceBuffer(std::string& errorMessage) {
 	const size_t requiredBytes = static_cast<size_t>(width) * height * 4;
 
@@ -65,9 +63,9 @@ bool RasterPipeline::Impl::setupDescriptorSetsWithSharedResources(std::string& e
 		texturePtrs.push_back(&tex);
 		if (tex.isValid()) {
 			validTexCount++;
-			std::cout << "	Texture[" << i << "]: valid, imageView=" << tex.getImageView() << std::endl;
+			std::cout << "\tTexture[" << i << "]: valid, imageView=" << tex.getImageView() << std::endl;
 		} else
-			std::cout << "	Texture[" << i << "]: INVALID!" << std::endl;
+			std::cout << "\tTexture[" << i << "]: INVALID!" << std::endl;
 	}
 	std::cout << "  Binding texture array: " << texturePtrs.size() << " total, "
 			  << validTexCount << " valid, to binding 0" << std::endl;
@@ -85,6 +83,32 @@ bool RasterPipeline::Impl::setupDescriptorSetsWithSharedResources(std::string& e
 	std::cout << "=======================================================" << std::endl;
 
 	return true;
+}
+
+// Re-link GPU resources after SharedGpuResources has been updated.
+void RasterPipeline::refreshSharedResources() {
+	if (!impl_ || !impl_->task)
+		return;
+
+	auto* shared = impl_->options.sharedResources;
+	if (!shared || !shared->gpu)
+		return;
+
+	// Ne pas modifier la liste de buffers du GpuTask une fois qu'il est construit.
+	// Les buffers GPU eux-mêmes sont recréés par l'application et pointés par
+	// SharedGpuResources. Ici on ne met à jour que les paramètres de draw et les
+	// descriptors pour refléter les nouvelles ressources.
+
+	if (shared->indexBuffer && shared->indexCount > 0) {
+		impl_->task->setIndexedDrawParams(shared->indexCount, 1, 0, 0, 0);
+	} else if (shared->vertexBuffer && shared->vertexCount > 0) {
+		impl_->task->setDrawParams(shared->vertexCount, 1, 0, 0);
+	}
+
+	std::string error;
+	if (!impl_->setupDescriptorSetsWithSharedResources(error)) {
+		std::cerr << "RasterPipeline::refreshSharedResources: " << error << std::endl;
+	}
 }
 
 }

@@ -42,6 +42,8 @@ struct GpuVertex {
 
 namespace RasterCore {
 
+class ViewportManager;
+
 struct RasterPipeline::Impl {
 	InitOptions options;
 	OutputTarget target = OutputTarget::Buffer;
@@ -51,6 +53,7 @@ struct RasterPipeline::Impl {
 	cu::math::mat4 modelTransform = cu::math::mat4::identity();
 
 	renderApi::device::GPU* gpu = nullptr;
+	ViewportManager* viewportManager = nullptr;
 
 	std::unique_ptr<renderApi::gpuTask::GpuTask> task;
 	renderApi::gpuTask::GraphicsPipeline* pipeline = nullptr;

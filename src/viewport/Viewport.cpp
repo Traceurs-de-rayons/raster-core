@@ -8,7 +8,7 @@ namespace RasterCore {
 uint32_t Viewport::Impl::nextId = 0;
 
 Viewport::Impl::Impl(uint32_t id, const std::string& name, uint32_t width, uint32_t height,
-					 ViewportOutput outputType, SDL_Window* window, SharedGpuResources* sharedResources)
+					 ViewportOutput outputType, SDL_Window* window, SharedGpuResources* sharedResources, ViewportManager* viewportManager)
 	: id(id)
 	, name(name)
 	, width(width)
@@ -19,6 +19,7 @@ Viewport::Impl::Impl(uint32_t id, const std::string& name, uint32_t width, uint3
 	, active(true)
 	, camera{}
 	, sharedResources(sharedResources)
+	, viewportManager(viewportManager)
 {
 	camera.position = {0.0f, 2.0f, 5.0f};
 	camera.target = {0.0f, 0.0f, 0.0f};
@@ -59,20 +60,20 @@ bool Viewport::Impl::initializePipeline() {
 	}
 
 	pipeline = result.pipeline;
-
-	std::cout << "Viewport '" << name << "': Pipeline initialized" << std::endl;
+	if (viewportManager)
+		pipeline->setViewportManager(viewportManager);
+	else
+        return false;
 	return true;
 }
 
-std::unique_ptr<Viewport> Viewport::Impl::create(uint32_t id, const std::string& name, uint32_t width, uint32_t height, ViewportOutput outputType, SDL_Window* window, SharedGpuResources* sharedResources) {
-	return std::unique_ptr<Viewport>(new Viewport(id, name, width, height, outputType, window, sharedResources));
+std::unique_ptr<Viewport> Viewport::Impl::create(uint32_t id, const std::string& name, uint32_t width, uint32_t height, ViewportOutput outputType, SDL_Window* window, SharedGpuResources* sharedResources, ViewportManager* viewportManager) {
+	return std::unique_ptr<Viewport>(new Viewport(id, name, width, height, outputType, window, sharedResources, viewportManager));
 }
 
-Viewport::Viewport(uint32_t id, const std::string& name, uint32_t width, uint32_t height, ViewportOutput outputType, SDL_Window* window, SharedGpuResources* sharedResources)
-	: impl_(std::make_unique<Impl>(id, name, width, height, outputType, window, sharedResources))
+Viewport::Viewport(uint32_t id, const std::string& name, uint32_t width, uint32_t height, ViewportOutput outputType, SDL_Window* window, SharedGpuResources* sharedResources, ViewportManager* viewportManager)
+	: impl_(std::make_unique<Impl>(id, name, width, height, outputType, window, sharedResources, viewportManager))
 {
-	// Build pipeline immediately for this viewport so that getVulkanImage/View
-	// is ready when the UI first queries it.
 	if (impl_) {
 		if (!impl_->initializePipeline()) {
 			std::cerr << "Viewport '" << name << "': Failed to initialize pipeline on creation" << std::endl;
@@ -141,14 +142,8 @@ const Camera& Viewport::getCamera() const {
 
 
 void Viewport::render() {
-	if (!impl_ || !impl_->active)
+	if (!impl_ || !impl_->active || !impl_->pipeline)
 		return;
-
-	// Lazy safety: ensure pipeline is built even if constructor init failed earlier.
-	if (!impl_->pipeline) {
-		if (!impl_->initializePipeline())
-			return;
-	}
 
 	impl_->pipeline->setCamera(impl_->camera);
 	impl_->pipeline->drawFrame();
@@ -188,6 +183,13 @@ void* Viewport::getVulkanImageView() const {
 	if (!impl_ || !impl_->pipeline || impl_->outputType != ViewportOutput::Buffer)
 		return nullptr;
 	return impl_->pipeline->getColorImageView();
+}
+
+void Viewport::refreshSharedResources() {
+	if (!impl_ || !impl_->pipeline)
+		return;
+
+	impl_->pipeline->refreshSharedResources();
 }
 
 }

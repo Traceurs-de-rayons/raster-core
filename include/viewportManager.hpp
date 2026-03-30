@@ -18,11 +18,8 @@ public:
 	ViewportManager();
 	~ViewportManager();
 
-	// Initialize internal GPU and SharedGpuResources if needed.
-	// Safe to call multiple times; subsequent calls are no-ops.
 	bool init();
 
-	// Disable copy, enable move
 	ViewportManager(const ViewportManager&) = delete;
 	ViewportManager& operator=(const ViewportManager&) = delete;
 	ViewportManager(ViewportManager&&) noexcept;
@@ -39,22 +36,22 @@ public:
 
 	const std::vector<std::unique_ptr<Viewport>>& getViewports() const;
 
-	// Access the internally managed SharedGpuResources.
-	// Returns nullptr if init() has not successfully created a GPU.
 	SharedGpuResources* getSharedResources();
 	const SharedGpuResources* getSharedResources() const;
 
-	// Set externally-created shared GPU resources (no internal Scene conversion).
-	// The ViewportManager will forward this SharedGpuResources pointer to new viewports.
 	void setSharedResources(SharedGpuResources* resources);
 
 	void renderAll();
 
+	void pauseAllViewportTasks();
+	void resumeAllViewportTasks();
+
 	size_t getViewportCount() const;
+	void check_resize();
 
 private:
 	struct Impl;
 	std::unique_ptr<Impl> impl_;
 };
 
-} // namespace RasterCore
+}

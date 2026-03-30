@@ -9,6 +9,8 @@ bool RasterPipeline::Impl::rebuildPipeline(std::string &errorMessage) {
   destroyGpuTask();
 
   task = std::make_unique<renderApi::gpuTask::GpuTask>("RasterCoreTask", gpu);
+  task->setAutoExecute(true);
+
   pipeline = task->createGraphicsPipeline("RasterCorePipeline");
   if (!pipeline) {
     errorMessage = "RasterCore: failed to create graphics pipeline";
@@ -74,6 +76,9 @@ bool RasterPipeline::Impl::rebuildPipeline(std::string &errorMessage) {
     errorMessage = "RasterCore: failed to build GPU task";
     return false;
   }
+
+  task->setAutoExecute(true);
+  task->registerWithGPU();
 
   return true;
 }

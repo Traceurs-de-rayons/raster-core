@@ -31,9 +31,9 @@ enum class ViewportOutput {
 };
 
 // Output target type
-enum class OutputTarget { 
-	Buffer, 
-	Window 
+enum class OutputTarget {
+	Buffer,
+	Window
 };
 
 } // namespace RasterCore

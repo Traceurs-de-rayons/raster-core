@@ -4,7 +4,7 @@
 
 namespace RasterCore {
 
-RasterPipeline::RasterPipeline(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
+RasterPipeline::RasterPipeline(std::unique_ptr<Impl> impl) : impl_(std::move(impl)), viewportManager_(nullptr) {}
 
 RasterPipeline::~RasterPipeline() {
 	if (!impl_)
@@ -23,28 +23,66 @@ void RasterPipeline::drawFrame() {
 		return;
 
 	impl_->updateCameraUniform();
-	impl_->task->execute();
 
-	if (impl_->target == OutputTarget::Window && impl_->pipeline) {
-		uint32_t newWidth = impl_->pipeline->getWidth();
-		uint32_t newHeight = impl_->pipeline->getHeight();
-		if (newWidth > 0 && newHeight > 0 && (newWidth != impl_->width || newHeight != impl_->height)) {
-			impl_->width = newWidth;
-			impl_->height = newHeight;
+	// if (impl_->target == OutputTarget::Window && impl_->pipeline) {
+	// 	uint32_t newWidth = impl_->pipeline->getWidth();
+	// 	uint32_t newHeight = impl_->pipeline->getHeight();
+	// 	if (newWidth > 0 && newHeight > 0 && (newWidth != impl_->width || newHeight != impl_->height)) {
 
-			std::string error;
-			if (!impl_->rebuildPipeline(error))
-				std::cerr << error << std::endl;
-		}
-	}
+
+	// 	    pauseGpuTask();
+
+	// 		impl_->width = newWidth;
+	// 		impl_->height = newHeight;
+
+	// 		std::string error;
+	// 		if (!impl_->rebuildPipeline(error))
+	// 			std::cerr << error << std::endl;
+
+	// 		resumeGpuTask();
+	// 	}
+	// }
+
+	if (viewportManager_)
+		viewportManager_->check_resize();
 
 	if (impl_->target == OutputTarget::Buffer)
 		impl_->copyColorImageToDeviceBuffer();
 }
 
+void RasterPipeline::resize() {
+	if (!impl_ || !impl_->task)
+		return;
+
+	impl_->width = impl_->pipeline->getWidth();
+	impl_->height = impl_->pipeline->getHeight();
+
+	std::string error;
+	if (!impl_->rebuildPipeline(error))
+		std::cerr << error << std::endl;
+}
+
 void RasterPipeline::waitIdle() {
 	if (impl_ && impl_->gpu)
 		vkDeviceWaitIdle(impl_->gpu->device);
+}
+
+void RasterPipeline::pauseGpuTask() {
+	if (!impl_ || !impl_->task)
+		return;
+
+	impl_->task->setEnabled(false);
+	impl_->task->wait();
+
+	if (impl_->gpu)
+		vkDeviceWaitIdle(impl_->gpu->device);
+}
+
+void RasterPipeline::resumeGpuTask() {
+	if (!impl_ || !impl_->task)
+		return;
+
+	impl_->task->setEnabled(true);
 }
 
 void RasterPipeline::setModelTransform(const cu::math::mat4& transform) {
@@ -102,6 +140,17 @@ Camera RasterPipeline::getCamera() const {
 	if (impl_)
 		return impl_->activeCamera;
 	return {};
+}
+
+void RasterPipeline::setViewportManager(ViewportManager* viewportManager) {
+	if (impl_)
+		impl_->viewportManager = viewportManager;
+}
+
+ViewportManager* RasterPipeline::getViewportManager() {
+	if (impl_ && impl_->viewportManager)
+		return impl_->viewportManager;
+	return NULL;
 }
 
 InitResult initRasterisation(const InitOptions& options) {

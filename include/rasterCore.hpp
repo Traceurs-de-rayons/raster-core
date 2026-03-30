@@ -3,6 +3,7 @@
 #include "Vertex.hpp"
 #include "rasterTypes.hpp"
 #include "core-utils.hpp"
+#include "viewportManager.hpp"
 
 #include <SDL2/SDL.h>
 #include <vulkan/vulkan_core.h>
@@ -49,7 +50,7 @@ struct TextureData {
 	int height = 0;
 	int channels = 0;
 	std::vector<unsigned char> pixels;
-	
+
 	bool isValid() const { return !pixels.empty() && width > 0 && height > 0; }
 };
 
@@ -107,42 +108,51 @@ struct InitResult {
 InitResult initRasterisation(const InitOptions& options = InitOptions());
 
 class RasterPipeline {
-  public:
-	~RasterPipeline();
-	RasterPipeline(RasterPipeline&&) noexcept;
-	RasterPipeline& operator=(RasterPipeline&&) noexcept;
+	private:
+		struct Impl;
+		std::unique_ptr<Impl> impl_;
+		ViewportManager* viewportManager_;
 
-	RasterPipeline(const RasterPipeline&) = delete;
-	RasterPipeline& operator=(const RasterPipeline&) = delete;
+		explicit RasterPipeline(std::unique_ptr<Impl> impl);
 
-	void drawFrame();
-	void waitIdle();
+		friend InitResult initRasterisation(const InitOptions&);
 
-	void setCamera(const Camera& camera);
-	Camera getCamera() const;
-	void setModelTransform(const cu::math::mat4& transform);
-	cu::math::mat4 getModelTransform() const;
+	public:
+		~RasterPipeline();
+		RasterPipeline(RasterPipeline&&) noexcept;
+		RasterPipeline& operator=(RasterPipeline&&) noexcept;
 
-	OutputTarget target() const;
-	uint32_t width() const;
-	uint32_t height() const;
+		RasterPipeline(const RasterPipeline&) = delete;
+		RasterPipeline& operator=(const RasterPipeline&) = delete;
 
-	renderApi::Buffer* deviceBuffer();
-	renderApi::gpuTask::GpuTask* gpuTask();
-	renderApi::device::GPU* gpu();
-	VkRenderPass getRenderPass();
-	
-	// Get render target image for ImGui display (only for Buffer output)
-	void* getColorImage() const;
-	void* getColorImageView() const;
+		void drawFrame();
+		void waitIdle();
+		void pauseGpuTask();
+		void resumeGpuTask();
 
-  private:
-	struct Impl;
-	std::unique_ptr<Impl> impl_;
+		void setCamera(const Camera& camera);
+		Camera getCamera() const;
+		void setModelTransform(const cu::math::mat4& transform);
+		cu::math::mat4 getModelTransform() const;
 
-	explicit RasterPipeline(std::unique_ptr<Impl> impl);
+		void setViewportManager(ViewportManager* viewportManager);
+		ViewportManager* getViewportManager();
 
-	friend InitResult initRasterisation(const InitOptions&);
+		OutputTarget target() const;
+		uint32_t width() const;
+		uint32_t height() const;
+
+		renderApi::Buffer* deviceBuffer();
+		renderApi::gpuTask::GpuTask* gpuTask();
+		renderApi::device::GPU* gpu();
+		VkRenderPass getRenderPass();
+
+		void refreshSharedResources();
+
+		void* getColorImage() const;
+		void* getColorImageView() const;
+
+		void resize();
 };
 
-} // namespace RasterCore
+}

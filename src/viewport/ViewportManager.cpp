@@ -7,6 +7,7 @@
 #include "buffer/buffer.hpp"
 #include "image/image.hpp"
 #include <iostream>
+#include <vulkan/vulkan_core.h>
 
 namespace RasterCore {
 
@@ -163,7 +164,6 @@ ViewportManager& ViewportManager::operator=(ViewportManager&& other) noexcept {
 bool ViewportManager::init() {
 	if (!impl_)
 		return false;
-	// Ensure the shared GPU exists; this will also set sharedResources.gpu.
 	if (!impl_->createSharedGpuIfNeeded()) {
 		std::cerr << "ViewportManager::init: Failed to create shared GPU" << std::endl;
 		return false;
@@ -199,7 +199,7 @@ Viewport* ViewportManager::addViewport(SDL_Window* window, const std::string& na
 	}
 
 	uint32_t id = Viewport::Impl::nextId++;
-	auto viewport = Viewport::Impl::create(id, viewportName, w, h, ViewportOutput::Window, window, &impl_->sharedResources);
+	auto viewport = Viewport::Impl::create(id, viewportName, w, h, ViewportOutput::Window, window, &impl_->sharedResources, this);
 
 	auto* ptr = viewport.get();
 	size_t index = impl_->viewports.size();
@@ -224,7 +224,7 @@ Viewport* ViewportManager::addViewport(uint32_t width, uint32_t height, const st
 	}
 
 	uint32_t id = Viewport::Impl::nextId++;
-	auto viewport = Viewport::Impl::create(id, viewportName, width, height, ViewportOutput::Buffer, nullptr, &impl_->sharedResources);
+	auto viewport = Viewport::Impl::create(id, viewportName, width, height, ViewportOutput::Buffer, nullptr, &impl_->sharedResources, this);
 
 	auto* ptr = viewport.get();
 	size_t index = impl_->viewports.size();
@@ -319,9 +319,70 @@ void ViewportManager::renderAll() {
 	if (!impl_)
 		return;
 
+	pauseAllViewportTasks();
+
+	if (impl_->sharedGpu) {
+		vkDeviceWaitIdle(impl_->sharedGpu->device);
+	}
+
 	for (auto& viewport : impl_->viewports)
 		if (viewport && viewport->isActive())
 			viewport->render();
+
+	resumeAllViewportTasks();
+}
+
+void ViewportManager::pauseAllViewportTasks() {
+    std::cout << "ViewportManager: Pausing all viewport tasks" << std::endl;
+
+	if (!impl_)
+		return;
+
+	for (auto& viewport : impl_->viewports) {
+		if (!viewport)
+			continue;
+
+		auto* pipeline = viewport->getPipeline();
+		if (!pipeline)
+			continue;
+
+		auto* task = pipeline->gpuTask();
+		if (task)
+			task->setAutoExecute(false);
+	}
+
+	for (auto& viewport : impl_->viewports) {
+		if (!viewport)
+			continue;
+
+		auto* pipeline = viewport->getPipeline();
+		if (!pipeline)
+			continue;
+
+		auto* task = pipeline->gpuTask();
+		if (task)
+			task->wait();
+	}
+}
+
+void ViewportManager::resumeAllViewportTasks() {
+	if (!impl_)
+		return;
+
+	// Re-enable autoexecute on all viewport tasks
+	for (auto& viewport : impl_->viewports) {
+		if (!viewport)
+			continue;
+
+		auto* pipeline = viewport->getPipeline();
+		if (!pipeline)
+			continue;
+
+		auto* task = pipeline->gpuTask();
+		if (task) {
+			task->setAutoExecute(true);
+		}
+	}
 }
 
 size_t ViewportManager::getViewportCount() const {

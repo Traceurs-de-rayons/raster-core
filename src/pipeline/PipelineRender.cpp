@@ -55,6 +55,18 @@ void RasterPipeline::Impl::copyColorImageToDeviceBuffer() {
 	region.imageExtent = {width, height, 1};
 	vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, deviceColorBuffer.getHandle(), 1, &region);
 
+	// Add buffer memory barrier to synchronize GPU-to-CPU transfer
+	VkBufferMemoryBarrier bufferBarrier{};
+	bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	bufferBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	bufferBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+	bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	bufferBarrier.buffer = deviceColorBuffer.getHandle();
+	bufferBarrier.offset = 0;
+	bufferBarrier.size = VK_WHOLE_SIZE;
+	vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &bufferBarrier, 0, nullptr);
+
 	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 	barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -94,6 +106,7 @@ void RasterPipeline::Impl::transitionColorImageForShaderRead() {
 void RasterPipeline::Impl::destroyGpuTask() {
 	if (task && gpu) {
 		vkDeviceWaitIdle(gpu->device);
+		task->unregisterFromGPU();
 		task.reset();
 		pipeline = nullptr;
 	}

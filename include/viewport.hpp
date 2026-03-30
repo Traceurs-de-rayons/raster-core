@@ -13,13 +13,14 @@ namespace RasterCore {
 class	RasterPipeline;
 struct	Scene;
 struct	SharedGpuResources;
+class	ViewportManager;
 
 class Viewport {
 	private:
 		friend class ViewportManager;
 		struct Impl;
 		std::unique_ptr<Impl> impl_;
-		Viewport(uint32_t id, const std::string& name, uint32_t width, uint32_t height, ViewportOutput outputType, SDL_Window* window = nullptr, SharedGpuResources* sharedResources = nullptr);
+		Viewport(uint32_t id, const std::string& name, uint32_t width, uint32_t height, ViewportOutput outputType, SDL_Window* window = nullptr, SharedGpuResources* sharedResources = nullptr, ViewportManager* viewportManager = nullptr);
 
 	public:
 		~Viewport();
@@ -34,27 +35,27 @@ class Viewport {
 		uint32_t		getId() const;
 		const std::string& getName() const;
 
-		void			setRenderMode(RenderMode mode);
+		void setRenderMode(RenderMode mode);
 		RenderMode		getRenderMode() const;
 
 		void			setActive(bool active);
-		bool			isActive() const;
+		bool isActive() const;
 
 		Camera&			getCamera();
-		const Camera&	getCamera() const;
+		const Camera& getCamera() const;
 
-		// Render the viewport. The underlying pipeline is lazily built per-viewport
-		// on first call to render(), using the shared GPU resources.
-		void			render();
+		void render();
 
-		RasterPipeline*			getPipeline();
-		const RasterPipeline*	getPipeline() const;
+		RasterPipeline* getPipeline();
+		const RasterPipeline* getPipeline() const;
+
+		void refreshSharedResources();
 
 		const unsigned char*	getImageData() const;
 		size_t					getImageDataSize() const;
 
 		void*					getVulkanImage() const;
-		void*					getVulkanImageView() const;
+		void* getVulkanImageView() const;
 };
 
 }
