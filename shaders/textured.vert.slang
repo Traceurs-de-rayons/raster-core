@@ -1,18 +1,13 @@
-// Vertex shader in Slang
-
 struct VertexInput {
   float3 position : POSITION;
-  float3 color : COLOR;
+  float3 normal : NORMAL;
   float2 texCoord : TEXCOORD;
-  uint textureId : TEXTUREID;
-  uint modelMatrixId : MODELMATRIXID;
 };
 
 struct VertexOutput {
   float4 position : SV_Position;
-  float3 color : COLOR;
+  float3 normal : NORMAL;
   float2 texCoord : TEXCOORD;
-  uint textureId : TEXTUREID;
 };
 
 struct CameraUBO {
@@ -31,14 +26,13 @@ StructuredBuffer<float4x4> modelMatrices;
 VertexOutput main(VertexInput input) {
   VertexOutput output;
 
-  float4x4 modelMatrix = modelMatrices[input.modelMatrixId];
-  float4 worldPos = mul(modelMatrix, float4(input.position, 1.0));
+  // float4x4 modelMatrix = modelMatrices[input.modelMatrixId];
+  // float4 worldPos = mul(modelMatrix, float4(input.position, 1.0));
+  float4 worldPos = float4(input.position, 1.0);
   float4 viewPos = mul(camera.view, worldPos);
   output.position = mul(camera.proj, viewPos);
 
-  output.color = input.color;
   output.texCoord = input.texCoord;
-  output.textureId = input.textureId;
 
   return output;
 }

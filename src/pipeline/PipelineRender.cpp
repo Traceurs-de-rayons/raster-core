@@ -25,7 +25,7 @@ void RasterPipeline::Impl::copyColorImageToDeviceBuffer() {
 	if (!deviceColorBuffer.isValid())
 		return;
 
-	VkImage image = pipeline->getColorImage(0);
+	VkImage image = mainPipeline->getColorImage(0);
 	if (image == VK_NULL_HANDLE)
 		return;
 
@@ -55,7 +55,6 @@ void RasterPipeline::Impl::copyColorImageToDeviceBuffer() {
 	region.imageExtent = {width, height, 1};
 	vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, deviceColorBuffer.getHandle(), 1, &region);
 
-	// Add buffer memory barrier to synchronize GPU-to-CPU transfer
 	VkBufferMemoryBarrier bufferBarrier{};
 	bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
 	bufferBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -77,7 +76,7 @@ void RasterPipeline::Impl::copyColorImageToDeviceBuffer() {
 }
 
 void RasterPipeline::Impl::transitionColorImageForShaderRead() {
-	VkImage image = pipeline->getColorImage(0);
+	VkImage image = mainPipeline->getColorImage(0);
 	if (image == VK_NULL_HANDLE) {
 		return;
 	}
@@ -108,7 +107,7 @@ void RasterPipeline::Impl::destroyGpuTask() {
 		vkDeviceWaitIdle(gpu->device);
 		task->unregisterFromGPU();
 		task.reset();
-		pipeline = nullptr;
+		mainPipeline = nullptr;
 	}
 }
 

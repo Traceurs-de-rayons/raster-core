@@ -14,6 +14,7 @@
 # include <array>
 # include <cstdint>
 # include <filesystem>
+#include <iterator>
 # include <string>
 # include <vector>
 
@@ -28,14 +29,6 @@ struct alignas(16) CameraUniform {
 	std::array<float, 16> model;
 	std::array<float, 16> view;
 	std::array<float, 16> proj;
-};
-
-struct GpuVertex {
-	float position[3];
-	float color[3];
-	float uv[2];
-	uint32_t textureId;
-	uint32_t modelMatrixId;
 };
 
 }
@@ -56,7 +49,9 @@ struct RasterPipeline::Impl {
 	ViewportManager* viewportManager = nullptr;
 
 	std::unique_ptr<renderApi::gpuTask::GpuTask> task;
-	renderApi::gpuTask::GraphicsPipeline* pipeline = nullptr;
+
+	renderApi::gpuTask::GraphicsPipeline* mainPipeline = nullptr;
+	renderApi::gpuTask::GraphicsPipeline* debugPipeline = nullptr;
 
 	renderApi::Buffer deviceColorBuffer;
 	renderApi::Buffer cameraUniformBuffer;

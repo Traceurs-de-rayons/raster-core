@@ -24,6 +24,7 @@ struct GPU;
 } // namespace device
 namespace gpuTask {
 class GpuTask;
+class GraphicsPipeline;
 } // namespace gpuTask
 } // namespace renderApi
 
@@ -80,8 +81,10 @@ struct ShaderConfig {
 			std::filesystem::path(RASTER_CORE_SHADER_DIR),
 			std::filesystem::path(RASTER_CORE_SHADER_FALLBACK_DIR),
 			std::filesystem::path("shaders")};
-	std::string vertex = "textured.vert.spv";
-	std::string fragment = "textured.frag.spv";
+	std::string mainVertex = "textured.vert.spv";
+	std::string mainFragment = "textured.frag.spv";
+	std::string debugVertex = "debug.vert.spv";
+	std::string debugFragment = "debug.frag.spv";
 };
 
 struct InitOptions {
@@ -153,6 +156,11 @@ class RasterPipeline {
 		void* getColorImageView() const;
 
 		void resize();
+
+		// Second pipeline control
+		void setEnableSecondPipeline(bool enable);
+		bool isSecondPipelineEnabled() const;
+		renderApi::gpuTask::GraphicsPipeline* getSecondPipeline() const;
 };
 
 }

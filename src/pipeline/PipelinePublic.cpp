@@ -24,9 +24,9 @@ void RasterPipeline::drawFrame() {
 
 	impl_->updateCameraUniform();
 
-	// if (impl_->target == OutputTarget::Window && impl_->pipeline) {
-	// 	uint32_t newWidth = impl_->pipeline->getWidth();
-	// 	uint32_t newHeight = impl_->pipeline->getHeight();
+	// if (impl_->target == OutputTarget::Window && impl_->mainPipeline) {
+	// 	uint32_t newWidth = impl_->mainPipeline->getWidth();
+	// 	uint32_t newHeight = impl_->mainPipeline->getHeight();
 	// 	if (newWidth > 0 && newHeight > 0 && (newWidth != impl_->width || newHeight != impl_->height)) {
 
 
@@ -54,8 +54,8 @@ void RasterPipeline::resize() {
 	if (!impl_ || !impl_->task)
 		return;
 
-	impl_->width = impl_->pipeline->getWidth();
-	impl_->height = impl_->pipeline->getHeight();
+	impl_->width = impl_->mainPipeline->getWidth();
+	impl_->height = impl_->mainPipeline->getHeight();
 
 	std::string error;
 	if (!impl_->rebuildPipeline(error))
@@ -126,9 +126,9 @@ renderApi::device::GPU* RasterPipeline::gpu() {
 }
 
 VkRenderPass RasterPipeline::getRenderPass() {
-	if (!impl_ || !impl_->pipeline)
+	if (!impl_ || !impl_->mainPipeline)
 		return VK_NULL_HANDLE;
-	return impl_->pipeline->getRenderPass();
+	return impl_->mainPipeline->getRenderPass();
 }
 
 void RasterPipeline::setCamera(const Camera& camera) {

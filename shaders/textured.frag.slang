@@ -1,10 +1,7 @@
-// Fragment shader in Slang
-
 struct VertexOutput {
   float4 position : SV_Position;
-  float3 color : COLOR;
+  float3 normal : NORMAL;
   float2 texCoord : TEXCOORD;
-  uint textureId : TEXTUREID;
 };
 
 struct FragmentOutput {
@@ -18,8 +15,7 @@ Sampler2D textures[];
 FragmentOutput main(VertexOutput input) {
   FragmentOutput output;
 
-  float4 texColor =
-      textures[NonUniformResourceIndex(input.textureId)].Sample(input.texCoord);
+  float4 texColor = float4(1.0, 0.0, 0.0, 1.0);
   output.color = texColor;
 
   return output;

@@ -11,45 +11,84 @@ bool RasterPipeline::Impl::rebuildPipeline(std::string &errorMessage) {
   task = std::make_unique<renderApi::gpuTask::GpuTask>("RasterCoreTask", gpu);
   task->setAutoExecute(true);
 
-  pipeline = task->createGraphicsPipeline("RasterCorePipeline");
-  if (!pipeline) {
+  {
+
+  mainPipeline = task->createGraphicsPipeline("RasterCorePipeline");
+  if (!mainPipeline) {
     errorMessage = "RasterCore: failed to create graphics pipeline";
     return false;
   }
 
   if (target == OutputTarget::Window) {
-    pipeline->setOutputTarget(renderApi::gpuTask::OutputTarget::SDL_SURFACE);
-    pipeline->setSDLWindow(windowConfig.window);
-    pipeline->setPresentMode(windowConfig.enableVsync
+    mainPipeline->setOutputTarget(renderApi::gpuTask::OutputTarget::SDL_SURFACE);
+    mainPipeline->setSDLWindow(windowConfig.window);
+    mainPipeline->setPresentMode(windowConfig.enableVsync
                                  ? VK_PRESENT_MODE_FIFO_KHR
                                  : windowConfig.presentMode);
-    pipeline->setSwapchainImageCount(
+    mainPipeline->setSwapchainImageCount(
         std::max(2u, windowConfig.swapchainImageCount));
   } else
-    pipeline->setOutputTarget(renderApi::gpuTask::OutputTarget::BUFFER);
+    mainPipeline->setOutputTarget(renderApi::gpuTask::OutputTarget::BUFFER);
 
-  pipeline->setColorAttachmentCount(1);
-  pipeline->setColorAttachmentFormat(0, colorFormat);
-  pipeline->setDepthFormat(VK_FORMAT_D32_SFLOAT);
-  pipeline->setDepthStencil(true, true, VK_COMPARE_OP_LESS);
-  pipeline->setRasterizer(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE,
+  mainPipeline->setColorAttachmentCount(1);
+  mainPipeline->setColorAttachmentFormat(0, colorFormat);
+  mainPipeline->setDepthFormat(VK_FORMAT_D32_SFLOAT);
+  mainPipeline->setDepthStencil(true, true, VK_COMPARE_OP_LESS);
+  mainPipeline->setRasterizer(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE,
                           VK_FRONT_FACE_COUNTER_CLOCKWISE);
-  pipeline->setColorBlendAttachment(false);
-  pipeline->addVertexBinding(0, sizeof(internal::GpuVertex),
+  mainPipeline->setColorBlendAttachment(false);
+  mainPipeline->addVertexBinding(0, sizeof(Vertex),
                              VK_VERTEX_INPUT_RATE_VERTEX);
-  pipeline->addVertexAttribute(0, 0, VK_FORMAT_R32G32B32_SFLOAT,
-                               offsetof(internal::GpuVertex, position));
-  pipeline->addVertexAttribute(1, 0, VK_FORMAT_R32G32B32_SFLOAT,
-                               offsetof(internal::GpuVertex, color));
-  pipeline->addVertexAttribute(2, 0, VK_FORMAT_R32G32_SFLOAT,
-                               offsetof(internal::GpuVertex, uv));
-  pipeline->addVertexAttribute(3, 0, VK_FORMAT_R32_UINT,
-                               offsetof(internal::GpuVertex, textureId));
-  pipeline->addVertexAttribute(4, 0, VK_FORMAT_R32_UINT,
-                               offsetof(internal::GpuVertex, modelMatrixId));
+  mainPipeline->addVertexAttribute(0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                               offsetof(Vertex, pos));
+  mainPipeline->addVertexAttribute(1, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                               offsetof(Vertex, normal));
+  mainPipeline->addVertexAttribute(2, 0, VK_FORMAT_R32G32_SFLOAT,
+                               offsetof(Vertex, uv));
 
   if (!configurePipelineShaders(errorMessage))
     return false;
+
+  }
+  // {
+
+  // debugPipeline = task->createGraphicsPipeline("RasterCoreDebugPipeline");
+  // if (!debugPipeline) {
+  //   errorMessage = "RasterCore: failed to create debug graphics pipeline";
+  //   return false;
+  // }
+
+  // if (target == OutputTarget::Window) {
+  //   debugPipeline->setOutputTarget(renderApi::gpuTask::OutputTarget::SDL_SURFACE);
+  //   debugPipeline->setSDLWindow(windowConfig.window);
+  //   debugPipeline->setPresentMode(windowConfig.enableVsync
+  //                                ? VK_PRESENT_MODE_FIFO_KHR
+  //                                : windowConfig.presentMode);
+  //   debugPipeline->setSwapchainImageCount(
+  //       std::max(2u, windowConfig.swapchainImageCount));
+  // } else
+  //   debugPipeline->setOutputTarget(renderApi::gpuTask::OutputTarget::BUFFER);
+
+  // debugPipeline->setColorAttachmentCount(1);
+  // debugPipeline->setColorAttachmentFormat(0, colorFormat);
+  // debugPipeline->setDepthFormat(VK_FORMAT_D32_SFLOAT);
+  // debugPipeline->setDepthStencil(true, true, VK_COMPARE_OP_LESS);
+  // debugPipeline->setRasterizer(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE,
+  //                         VK_FRONT_FACE_COUNTER_CLOCKWISE);
+  // debugPipeline->setColorBlendAttachment(false);
+  // debugPipeline->addVertexBinding(0, sizeof(Vertex),
+  //                            VK_VERTEX_INPUT_RATE_VERTEX);
+  // debugPipeline->addVertexAttribute(0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+  //                              offsetof(Vertex, pos));
+  // debugPipeline->addVertexAttribute(1, 0, VK_FORMAT_R32G32B32_SFLOAT,
+  //                              offsetof(Vertex, normal));
+  // debugPipeline->addVertexAttribute(2, 0, VK_FORMAT_R32G32_SFLOAT,
+  //                              offsetof(Vertex, uv));
+
+  // if (!configurePipelineShaders(errorMessage))
+  //   return false;
+
+  // }
 
   if (!options.sharedResources || !options.sharedResources->gpu) {
     errorMessage = "RasterCore: shared resources are required";
@@ -84,37 +123,50 @@ bool RasterPipeline::Impl::rebuildPipeline(std::string &errorMessage) {
 }
 
 bool RasterPipeline::Impl::configurePipelineShaders(std::string &errorMessage) {
-  auto vertexPath =
-      internal::resolveShaderPath(shaderConfig, shaderConfig.vertex);
-  if (vertexPath.empty()) {
-    errorMessage =
-        "RasterCore: vertex shader not found: " + shaderConfig.vertex;
+  auto mainVertexPath = internal::resolveShaderPath(shaderConfig, shaderConfig.mainVertex);
+  if (mainVertexPath.empty()) {
+    errorMessage = "RasterCore: vertex shader not found: " + shaderConfig.mainVertex;
     return false;
   }
 
-  auto fragmentPath =
-      internal::resolveShaderPath(shaderConfig, shaderConfig.fragment);
-  if (fragmentPath.empty()) {
-    errorMessage =
-        "RasterCore: fragment shader not found: " + shaderConfig.fragment;
+  auto mainFragmentPath = internal::resolveShaderPath(shaderConfig, shaderConfig.mainFragment);
+  if (mainFragmentPath.empty()) {
+    errorMessage = "RasterCore: fragment shader not found: " + shaderConfig.mainFragment;
     return false;
   }
+
+  // auto debugVertexPath = internal::resolveShaderPath(shaderConfig, shaderConfig.debugVertex);
+  // if (debugVertexPath.empty()) {
+  //   errorMessage = "RasterCore: debug vertex shader not found: " + shaderConfig.debugVertex;
+  //   return false;
+  // }
+
+  // auto debugFragmentPath = internal::resolveShaderPath(shaderConfig, shaderConfig.debugFragment);
+  // if (debugFragmentPath.empty()) {
+  //   errorMessage = "RasterCore: debug fragment shader not found: " + shaderConfig.debugFragment;
+  //   return false;
+  // }
 
   std::cout << "=== RasterPipeline: Loading shaders ===" << std::endl;
-  std::cout << "  Vertex shader: " << vertexPath << std::endl;
-  std::cout << "  Fragment shader: " << fragmentPath << std::endl;
+  std::cout << "  Vertex shader: " << mainVertexPath << std::endl;
+  std::cout << "  Fragment shader: " << mainFragmentPath << std::endl;
 
-  auto vertexSpirv = internal::readSpirvFile(vertexPath);
-  auto fragmentSpirv = internal::readSpirvFile(fragmentPath);
+  auto mainVertexSpirv = internal::readSpirvFile(mainVertexPath);
+  auto mainFragmentSpirv = internal::readSpirvFile(mainFragmentPath);
+  // auto debugVertexSpirv = internal::readSpirvFile(debugVertexPath);
+  // auto debugFragmentSpirv = internal::readSpirvFile(debugFragmentPath);
 
-  std::cout << "  Vertex SPIR-V size: " << vertexSpirv.size() << " uint32s ("
-            << (vertexSpirv.size() * 4) << " bytes)" << std::endl;
-  std::cout << "  Fragment SPIR-V size: " << fragmentSpirv.size()
-            << " uint32s (" << (fragmentSpirv.size() * 4) << " bytes)"
-            << std::endl;
 
-  pipeline->setVertexShader(vertexSpirv);
-  pipeline->setFragmentShader(fragmentSpirv);
+  std::cout << "  Vertex SPIR-V size: " << mainVertexSpirv.size() << " uint32s ("
+            << (mainFragmentSpirv.size() * 4) << " bytes)" << std::endl;
+  // std::cout << "  Fragment SPIR-V size: " << debugVertexSpirv.size()
+  //           << " uint32s (" << (debugFragmentSpirv.size() * 4) << " bytes)"
+  //           << std::endl;
+
+  mainPipeline->setVertexShader(mainVertexSpirv);
+  mainPipeline->setFragmentShader(mainFragmentSpirv);
+  // debugPipeline->setVertexShader(debugVertexSpirv);
+  // debugPipeline->setFragmentShader(debugFragmentSpirv);
 
   std::cout << "  Shaders loaded successfully" << std::endl;
   return true;

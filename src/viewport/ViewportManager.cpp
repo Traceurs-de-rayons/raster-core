@@ -76,31 +76,11 @@ void ViewportManager::Impl::updateSharedResources() {
 		return;
 	}
 
-	struct GpuVertex {
-		float position[3];
-		float color[3];
-		float uv[2];
-		uint32_t textureId;
-		uint32_t modelMatrixId;
-	};
-
-	std::vector<GpuVertex> vertices;
-	std::vector<uint32_t> indices;
-
 	if (sharedResources.vertexBuffer == nullptr || sharedResources.indexBuffer == nullptr) {
-		// No external resources provided, nothing to build here anymore.
-		// The expectation is that external code fills SharedGpuResources directly.
 		sharedResources.vertexCount = 0;
 		sharedResources.indexCount = 0;
 		return;
 	}
-
-	// When external SharedGpuResources are provided, we only need to ensure the GPU is ready.
-	// The actual buffers are owned and managed externally, so we don't rebuild them here.
-
-	// Do not create or destroy internal vertex/index/model buffers anymore here.
-	// SharedGpuResources::vertexBuffer / indexBuffer / modelMatrixBuffer / textures
-	// are assumed to be owned and managed externally.
 }
 
 void ViewportManager::Impl::destroySharedResources() {
