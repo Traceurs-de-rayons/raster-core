@@ -1,11 +1,10 @@
 #pragma once
 
-#include "core-utils.hpp"
-#include <cstdint>
+#include "math/vec3.hpp"
+
 
 namespace RasterCore {
 
-// Camera structure
 struct Camera {
 	cu::math::vec3 position{0.0f, 0.0f, 5.0f};
 	cu::math::vec3 target{0.0f, 0.0f, 0.0f};
@@ -15,25 +14,22 @@ struct Camera {
 	float farPlane = 1000.0f;
 };
 
-// Render modes for viewport
 enum class RenderMode {
-	Normal,	  // Standard PBR rendering
-	Wireframe,   // Wireframe only
-	Normals,	 // Show normals as colors
-	UVs,		 // Show UVs as colors
-	Depth,	   // Depth visualization
+	Normal,
+	Wireframe,
+	Normals,
+	UVs,
+	Depth,
 };
 
-// Viewport output target
 enum class ViewportOutput {
-	Window,	  // Render to SDL window
-	Buffer,	  // Render to CPU-accessible buffer
+	Window,
+	Buffer,
 };
 
-// Output target type
 enum class OutputTarget {
 	Buffer,
 	Window
 };
 
-} // namespace RasterCore
+}

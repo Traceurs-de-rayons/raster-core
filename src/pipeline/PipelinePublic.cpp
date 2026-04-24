@@ -43,8 +43,8 @@ void RasterPipeline::drawFrame() {
 	// 	}
 	// }
 
-	if (viewportManager_)
-		viewportManager_->check_resize();
+	// if (viewportManager_)
+	// 	viewportManager_->check_resize();
 
 	if (impl_->target == OutputTarget::Buffer)
 		impl_->copyColorImageToDeviceBuffer();
@@ -142,16 +142,16 @@ Camera RasterPipeline::getCamera() const {
 	return {};
 }
 
-void RasterPipeline::setViewportManager(ViewportManager* viewportManager) {
-	if (impl_)
-		impl_->viewportManager = viewportManager;
-}
+// void RasterPipeline::setViewportManager(ViewportManager* viewportManager) {
+// 	if (impl_)
+// 		impl_->viewportManager = viewportManager;
+// }
 
-ViewportManager* RasterPipeline::getViewportManager() {
-	if (impl_ && impl_->viewportManager)
-		return impl_->viewportManager;
-	return NULL;
-}
+// ViewportManager* RasterPipeline::getViewportManager() {
+// 	if (impl_ && impl_->viewportManager)
+// 		return impl_->viewportManager;
+// 	return NULL;
+// }
 
 InitResult initRasterisation(const InitOptions& options) {
 	InitResult result;
