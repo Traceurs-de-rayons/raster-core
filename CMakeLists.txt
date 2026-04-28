@@ -45,11 +45,11 @@ if(NOT TARGET render-api)
 	add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../render-api render-api-build)
 endif()
 
-if(NOT TARGET viewport-manager)
-	add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../viewport-manager viewport-manager-build)
+if(NOT TARGET viewport_manager)
+	add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../viewport_manager viewport_manager-build)
 endif()
 
-target_link_libraries(raster-core PUBLIC scene-core render-api viewport-manager)
+target_link_libraries(raster-core PUBLIC scene-core render-api viewport_manager)
 
 # Shader compilation with Slang
 find_program(SLANGC slangc)

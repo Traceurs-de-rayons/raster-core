@@ -5,6 +5,8 @@
 #include "core-utils.hpp"
 #include "viewportManager.hpp"
 
+#include "buffer.hpp"
+
 #include <SDL2/SDL.h>
 #include <vulkan/vulkan_core.h>
 
@@ -17,7 +19,7 @@
 #include <vector>
 
 namespace renderApi {
-class Buffer;
+
 class Texture;
 namespace device {
 struct GPU;
@@ -33,9 +35,9 @@ namespace RasterCore {
 // Shared GPU resources used by all viewports
 struct SharedGpuResources {
 	renderApi::device::GPU* gpu = nullptr;
-	renderApi::Buffer* vertexBuffer = nullptr;
-	renderApi::Buffer* indexBuffer = nullptr;
-	renderApi::Buffer* modelMatrixBuffer = nullptr;
+	renderApi::Buffer vertexBuffer;
+	renderApi::Buffer indexBuffer;
+	renderApi::Buffer modelMatrixBuffer;
 	std::vector<renderApi::Texture>* textures = nullptr;
 	uint32_t indexCount = 0;
 	uint32_t vertexCount = 0;
