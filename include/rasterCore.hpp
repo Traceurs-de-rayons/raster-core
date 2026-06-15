@@ -23,16 +23,16 @@ namespace renderApi {
 class Texture;
 namespace device {
 struct GPU;
-} // namespace device
+}
 namespace gpuTask {
 class GpuTask;
 class GraphicsPipeline;
-} // namespace gpuTask
-} // namespace renderApi
+}
+}
 
 namespace RasterCore {
 
-// Shared GPU resources used by all viewports
+
 struct SharedGpuResources {
 	renderApi::device::GPU* gpu = nullptr;
 	renderApi::Buffer vertexBuffer;
