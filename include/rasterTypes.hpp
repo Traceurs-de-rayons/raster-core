@@ -11,25 +11,7 @@ struct Camera {
 	cu::math::vec3 up{0.0f, 1.0f, 0.0f};
 	float verticalFovDegrees = 60.0f;
 	float nearPlane = 0.1f;
-	float farPlane = 1000.0f;
-};
-
-enum class RenderMode {
-	Normal,
-	Wireframe,
-	Normals,
-	UVs,
-	Depth,
-};
-
-enum class ViewportOutput {
-	Window,
-	Buffer,
-};
-
-enum class OutputTarget {
-	Buffer,
-	Window
+	float farPlane = 10000.0f;
 };
 
 }

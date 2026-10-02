@@ -1,74 +1,24 @@
 #pragma once
 
 #include "Vertex.hpp"
-#include "rasterTypes.hpp"
 #include "core-utils.hpp"
-#include "viewportManager.hpp"
+#include "rasterTypes.hpp"
+#include "renderGraph.hpp"
 
 #include "buffer.hpp"
+#include "image.hpp"
 
-#include <SDL2/SDL.h>
 #include <vulkan/vulkan_core.h>
 
-#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
-namespace renderApi {
-
-class Texture;
-namespace device {
+namespace renderApi::device {
 struct GPU;
 }
-namespace gpuTask {
-class GpuTask;
-class GraphicsPipeline;
-}
-}
-
-namespace RasterCore {
-
-
-struct SharedGpuResources {
-	renderApi::device::GPU* gpu = nullptr;
-	renderApi::Buffer vertexBuffer;
-	renderApi::Buffer indexBuffer;
-	renderApi::Buffer modelMatrixBuffer;
-	std::vector<renderApi::Texture>* textures = nullptr;
-	uint32_t indexCount = 0;
-	uint32_t vertexCount = 0;
-};
-
-struct Triangle {
-	Vertex vertices[3];
-};
-
-struct TextureData {
-	std::string name;
-	int width = 0;
-	int height = 0;
-	int channels = 0;
-	std::vector<unsigned char> pixels;
-
-	bool isValid() const { return !pixels.empty() && width > 0 && height > 0; }
-};
-
-struct BufferOutputConfig {
-	uint32_t width = 1280;
-	uint32_t height = 720;
-	VkFormat colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
-};
-
-struct WindowOutputConfig {
-	SDL_Window* window = nullptr;
-	VkPresentModeKHR presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
-	uint32_t swapchainImageCount = 2;
-	bool enableVsync = true;
-};
 
 #ifndef RASTER_CORE_SHADER_DIR
 #define RASTER_CORE_SHADER_DIR ""
@@ -78,27 +28,76 @@ struct WindowOutputConfig {
 #define RASTER_CORE_SHADER_FALLBACK_DIR ""
 #endif
 
-struct ShaderConfig {
-	std::vector<std::filesystem::path> searchPaths = {
-			std::filesystem::path(RASTER_CORE_SHADER_DIR),
-			std::filesystem::path(RASTER_CORE_SHADER_FALLBACK_DIR),
-			std::filesystem::path("shaders")};
-	std::string mainVertex = "textured.vert.spv";
-	std::string mainFragment = "textured.frag.spv";
-	std::string debugVertex = "debug.vert.spv";
-	std::string debugFragment = "debug.frag.spv";
+namespace RasterCore {
+
+enum class LightType {
+	Directional, // sun or directional light: only `direction` matters
+	Point,		 // omni light at `position`, attenuated with distance
+};
+
+struct Light {
+	LightType type = LightType::Directional;
+	cu::math::vec3 position{0.0f};
+	cu::math::vec3 direction{0.0f, -1.0f, 0.0f}; // direction the light travels
+	cu::math::vec3 color{1.0f};
+	float intensity = 1.0f;
+	float angularDiameter = 0.0f; // directional only, degrees: shadow penumbra size (0 = sharp)
+	// Directional: the first one with this flag gets cascaded shadows.
+	// Point: the kMaxPointShadows most relevant ones (brightness at the camera) get cube shadows.
+	bool castsShadow = false;
+};
+
+inline constexpr uint32_t kMaxLights = 64;
+
+// Scene data uploaded once by the scene manager and shared by every viewport.
+struct SharedGpuResources {
+	renderApi::device::GPU* gpu = nullptr;
+	renderApi::Buffer vertexBuffer;
+	renderApi::Buffer indexBuffer;
+	renderApi::Buffer modelMatrixBuffer;
+	renderApi::Buffer materialBuffer;
+	renderApi::Buffer perDrawBuffer;
+	renderApi::Buffer drawCommandsBuffer;
+	std::vector<renderApi::Texture> textures;
+	uint32_t indexCount = 0;
+	uint32_t vertexCount = 0;
+	uint32_t drawCount = 0;
+
+	bool isLoaded() const { return gpu != nullptr && vertexBuffer.isValid(); }
+
+	void destroy() {
+		vertexBuffer.destroy();
+		indexBuffer.destroy();
+		modelMatrixBuffer.destroy();
+		materialBuffer.destroy();
+		perDrawBuffer.destroy();
+		drawCommandsBuffer.destroy();
+		for (auto& texture : textures)
+			texture.destroy();
+		textures.clear();
+		indexCount = 0;
+		vertexCount = 0;
+		drawCount = 0;
+	}
+};
+
+struct ShadowSettings {
+	float distance = 80.0f;		   // sun shadows cover the camera frustum up to this depth, then fade out
+	float cascadeSplitLambda = 0.8f; // cascade split blend: 0 = uniform, 1 = logarithmic
+	float cascadeBlend = 0.1f;	   // fraction of each cascade cross-faded with the next one
+	float maxPointShadowRange = 100.0f; // point light shadow maps stop at this distance
 };
 
 struct InitOptions {
-	OutputTarget target = OutputTarget::Buffer;
-	BufferOutputConfig buffer{};
-	WindowOutputConfig window{};
-	ShaderConfig shaders{};
-	bool enableValidation = false;
-	bool preferMeshShaders = false;
-	std::vector<std::string> instanceExtensions{};
-	std::vector<std::string> instanceLayers{};
-	std::string gpuName{};
+	uint32_t width = 1280;
+	uint32_t height = 720;
+	VkFormat colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+	RenderGraphConfig graph = RenderGraphConfig::deferred();
+	ShadowSettings shadows{};
+	std::vector<std::filesystem::path> shaderSearchPaths = {
+			std::filesystem::path(RASTER_CORE_SHADER_DIR),
+			std::filesystem::path(RASTER_CORE_SHADER_FALLBACK_DIR),
+			std::filesystem::path("shaders")};
 	SharedGpuResources* sharedResources = nullptr;
 };
 
@@ -113,16 +112,9 @@ struct InitResult {
 InitResult initRasterisation(const InitOptions& options = InitOptions());
 
 class RasterPipeline {
-	private:
-		struct Impl;
-		std::unique_ptr<Impl> impl_;
-		ViewportManager* viewportManager_;
-
-		explicit RasterPipeline(std::unique_ptr<Impl> impl);
-
-		friend InitResult initRasterisation(const InitOptions&);
-
 	public:
+		struct Impl;
+
 		~RasterPipeline();
 		RasterPipeline(RasterPipeline&&) noexcept;
 		RasterPipeline& operator=(RasterPipeline&&) noexcept;
@@ -130,39 +122,29 @@ class RasterPipeline {
 		RasterPipeline(const RasterPipeline&) = delete;
 		RasterPipeline& operator=(const RasterPipeline&) = delete;
 
+		// Uploads per-frame uniforms; the GPU thread renders the passes on its own.
 		void drawFrame();
-		void waitIdle();
-		void pauseGpuTask();
-		void resumeGpuTask();
+		bool resize(uint32_t width, uint32_t height, std::string* errorMessage = nullptr);
 
 		void setCamera(const Camera& camera);
 		Camera getCamera() const;
-		void setModelTransform(const cu::math::mat4& transform);
-		cu::math::mat4 getModelTransform() const;
+		// At most kMaxLights are used; extra lights are ignored.
+		void setLights(const std::vector<Light>& lights);
+		const std::vector<Light>& getLights() const;
 
-		void setViewportManager(ViewportManager* viewportManager);
-		ViewportManager* getViewportManager();
-
-		OutputTarget target() const;
 		uint32_t width() const;
 		uint32_t height() const;
-
-		renderApi::Buffer* deviceBuffer();
-		renderApi::gpuTask::GpuTask* gpuTask();
 		renderApi::device::GPU* gpu();
-		VkRenderPass getRenderPass();
 
-		void refreshSharedResources();
+		// Final image of the graph (VK_IMAGE_LAYOUT_GENERAL once a frame completes).
+		VkImage getColorImage() const;
+		VkImageView getColorImageView() const;
 
-		void* getColorImage() const;
-		void* getColorImageView() const;
+	private:
+		std::unique_ptr<Impl> impl_;
 
-		void resize();
-
-		// Second pipeline control
-		void setEnableSecondPipeline(bool enable);
-		bool isSecondPipelineEnabled() const;
-		renderApi::gpuTask::GraphicsPipeline* getSecondPipeline() const;
+		explicit RasterPipeline(std::unique_ptr<Impl> impl);
+		friend InitResult initRasterisation(const InitOptions&);
 };
 
 }
