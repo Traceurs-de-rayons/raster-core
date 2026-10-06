@@ -31,11 +31,11 @@ namespace {
 		return 1.0f / (1.0f + 0.09f * distance + 0.032f * distance * distance);
 	}
 
-	// Point lights that get a cube shadow: the brightest ones as seen from the camera.
+	// Point and spot lights that get a cube shadow: the brightest ones as seen from the camera.
 	std::vector<size_t> selectPointShadows(const std::vector<Light>& lights, size_t count, const Camera& camera) {
 		std::vector<size_t> candidates;
 		for (size_t i = 0; i < count; ++i) {
-			if (lights[i].type == LightType::Point && lights[i].castsShadow && lights[i].intensity > 0.0f)
+			if (lights[i].type != LightType::Directional && lights[i].castsShadow && lights[i].intensity > 0.0f)
 				candidates.push_back(i);
 		}
 
@@ -65,12 +65,20 @@ void buildLightFrame(LightFrame& out, const std::vector<Light>& lights, const Ca
 
 	for (size_t i = 0; i < count; ++i) {
 		const Light& light	   = lights[i];
-		const bool	 point	   = light.type == LightType::Point;
+		const bool	 point	   = light.type != LightType::Directional; // has a position
 		const vec3	 direction = safeNormalize(light.direction, down);
+		const float	 type	   = light.type == LightType::Spot ? 2.0f : point ? 1.0f : 0.0f;
 
-		out.lights[i].positionType		 = {light.position.x, light.position.y, light.position.z, point ? 1.0f : 0.0f};
+		out.lights[i].positionType		 = {light.position.x, light.position.y, light.position.z, type};
 		out.lights[i].directionIntensity = {direction.x, direction.y, direction.z, light.intensity};
 		out.lights[i].colorShadow		 = {light.color.x, light.color.y, light.color.z, -1.0f};
+
+		if (light.type == LightType::Spot) {
+			const float halfAngle = std::clamp(light.coneAngle, 1.0f, 179.0f) * 0.5f * 3.14159265f / 180.0f;
+			const float cosOuter  = std::cos(halfAngle);
+			const float cosInner  = std::cos(halfAngle * (1.0f - std::clamp(light.coneBlend, 0.0f, 1.0f)));
+			out.lights[i].cone	  = {cosOuter, std::max(cosInner, cosOuter + 1e-4f), 0.0f, 0.0f};
+		}
 
 		// Cascaded shadows for the first shadow-casting directional light (suns come first).
 		if (!point && light.castsShadow && out.cascadeViews == 0) {

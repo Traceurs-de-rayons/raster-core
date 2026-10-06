@@ -33,6 +33,7 @@ namespace RasterCore {
 enum class LightType {
 	Directional, // sun or directional light: only `direction` matters
 	Point,		 // omni light at `position`, attenuated with distance
+	Spot,		 // cone from `position` along `direction`, attenuated with distance
 };
 
 struct Light {
@@ -42,8 +43,10 @@ struct Light {
 	cu::math::vec3 color{1.0f};
 	float intensity = 1.0f;
 	float angularDiameter = 0.0f; // directional only, degrees: shadow penumbra size (0 = sharp)
+	float coneAngle = 45.0f;	  // spot only, degrees: full angle of the cone
+	float coneBlend = 0.15f;	  // spot only: fraction of the cone faded out at its edge (0 = hard edge)
 	// Directional: the first one with this flag gets cascaded shadows.
-	// Point: the kMaxPointShadows most relevant ones (brightness at the camera) get cube shadows.
+	// Point / spot: the kMaxPointShadows most relevant ones (brightness at the camera) get cube shadows.
 	bool castsShadow = false;
 };
 

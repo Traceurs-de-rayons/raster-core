@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -33,11 +34,12 @@ struct alignas(16) LightUniform {
 	std::array<uint32_t, 4> counts;			// x = lights, y = active cascades (0 = no sun shadow)
 };
 
-// Must match loadLight() in lighting.frag.slang: 3 float4 per light.
+// Must match loadLight() in lighting.frag.slang: 4 float4 per light.
 struct alignas(16) GpuLight {
-	std::array<float, 4> positionType;		 // xyz = position, w = 0 directional / 1 point
+	std::array<float, 4> positionType;		 // xyz = position, w = 0 directional / 1 point / 2 spot
 	std::array<float, 4> directionIntensity; // xyz = travel direction, w = intensity
 	std::array<float, 4> colorShadow;		 // rgb = color, w = first shadow view index or -1
+	std::array<float, 4> cone;				 // spot: x = cos(outer half angle), y = cos(inner half angle)
 };
 
 // Must match loadShadowView() in the shaders: 10 float4 per view.
@@ -86,12 +88,20 @@ struct RasterPipeline::Impl {
 	VkSampler shadowSampler = VK_NULL_HANDLE; // depth comparison sampler
 	internal::RenderGraph graph;
 
+	// Latest uniforms built by the main thread, copied to the buffers by the GPU thread
+	// between two frames (see GraphContext::beforeRecord).
+	std::mutex pendingMutex;
+	internal::CameraUniform pendingCamera{};
+	internal::LightFrame pendingFrame;
+	bool pendingDirty = false;
+
 	~Impl();
 
 	bool initialize(const InitOptions& initOptions, std::string& error);
 	bool createSamplers(std::string& error);
 	bool buildGraph(std::string& error);
 	void uploadUniforms();
+	void flushUniforms();
 };
 
 }

@@ -1,6 +1,6 @@
 // Deferred lighting: every light of the scene, with
 //  - sun / main directional light: cascaded shadow maps + PCSS soft shadows (contact hardening)
-//  - point lights: cube shadow maps (6 atlas tiles per light) + rotated Poisson PCF
+//  - point and spot lights: cube shadow maps (6 atlas tiles per light) + rotated Poisson PCF
 // Layouts mirror RasterCore::internal (pipeline/internal.hpp) and shadow::* (core/ShadowLayout.hpp).
 
 struct FragmentOutput {
@@ -23,7 +23,7 @@ struct LightUBO {
 [[vk::binding(5, 0)]] Sampler2DShadow pointShadow;  // comparison sampler (hardware PCF)
 [[vk::binding(21, 0)]] ConstantBuffer<LightUBO> lighting; // RasterCore::binding::Light
 // Raw float4 arrays: radv crashes compiling Slang's StructuredBuffer<struct>.
-[[vk::binding(22, 0)]] StructuredBuffer<float4> lightData;   // 3 float4 per light
+[[vk::binding(22, 0)]] StructuredBuffer<float4> lightData;   // 4 float4 per light
 [[vk::binding(23, 0)]] StructuredBuffer<float4> shadowViews; // 10 float4 per view
 
 static const float kAmbient = 0.15;
@@ -46,25 +46,29 @@ static const float2 kPoisson[16] = {
 
 struct GpuLight {
   float3 position;
-  bool isPoint;
+  bool isPoint; // point or spot: has a position
+  bool isSpot;
   float3 direction; // direction the light travels
   float intensity;
   float3 color;
   int shadowView; // first shadow view index, -1 = no shadow
+  float2 cone;    // spot: x = cos(outer half angle), y = cos(inner half angle)
 };
 
 GpuLight loadLight(uint index) {
-  float4 positionType = lightData[index * 3 + 0];
-  float4 directionIntensity = lightData[index * 3 + 1];
-  float4 colorShadow = lightData[index * 3 + 2];
+  float4 positionType = lightData[index * 4 + 0];
+  float4 directionIntensity = lightData[index * 4 + 1];
+  float4 colorShadow = lightData[index * 4 + 2];
 
   GpuLight light;
   light.position = positionType.xyz;
   light.isPoint = positionType.w > 0.5;
+  light.isSpot = positionType.w > 1.5;
   light.direction = directionIntensity.xyz;
   light.intensity = directionIntensity.w;
   light.color = colorShadow.rgb;
   light.shadowView = int(colorShadow.w);
+  light.cone = lightData[index * 4 + 3].xy;
   return light;
 }
 
@@ -255,6 +259,8 @@ FragmentOutput main(float4 fragCoord : SV_Position, float2 texCoord : TEXCOORD) 
       float distance = length(delta);
       toLight = delta / max(distance, 0.0001);
       attenuation = pointAttenuation(distance);
+      if (light.isSpot)
+        attenuation *= smoothstep(light.cone.x, light.cone.y, dot(-toLight, light.direction));
     }
 
     float ndl = max(dot(normal, toLight), 0.0);
