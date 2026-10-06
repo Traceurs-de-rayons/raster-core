@@ -56,17 +56,27 @@ struct LightFrame {
 	LightUniform			   uniform{};
 	std::vector<GpuLight>	   lights;
 	std::vector<GpuShadowView> shadowViews; // kMaxShadowViews entries
-	uint32_t				   cascadeViews = 0;
-	uint32_t				   pointViews	= 0;
+	// One bit per atlas tile (see RenderGraph::setViews()).
+	uint64_t				   cascadeTiles		= 0; // sun cascades in use
+	uint64_t				   pointTiles		= 0; // cube faces in use
+	uint64_t				   pointVisibleTiles = 0; // cube faces of lights that can reach the camera frustum
+	uint64_t				   geometryVersion	= 0; // SharedGpuResources::geometryVersion the frame was built for
 };
 
+// Which light owns each point shadow slot. Kept between frames so a light stays in its slot (and
+// keeps its cached shadow map) while the camera moves; -1 = free.
+using ShadowSlots = std::array<int, shadow::kMaxPointShadows>;
+
 void writeCameraUniform(CameraUniform& out, const Camera& camera, uint32_t width, uint32_t height);
-void buildLightFrame(LightFrame& out, const std::vector<Light>& lights, const Camera& camera, float aspect, const ShadowSettings& settings);
+void buildLightFrame(LightFrame& out, const std::vector<Light>& lights, const Camera& camera, float aspect, const ShadowSettings& settings,
+					 ShadowSlots& slots);
 
 // Shadows.cpp
 void writeCascades(LightFrame& frame, const cu::math::vec3& lightDirection, float sunAngularDiameter, const Camera& camera, float aspect,
 				   const ShadowSettings& settings);
 void writePointShadow(LightFrame& frame, uint32_t slot, const cu::math::vec3& position, float intensity, float maxRange);
+// Distance after which a point light no longer lights anything visibly (also its shadow map range).
+float pointLightRange(float intensity, float maxRange);
 
 }
 
@@ -95,6 +105,14 @@ struct RasterPipeline::Impl {
 	internal::LightFrame pendingFrame;
 	bool pendingDirty = false;
 
+	internal::ShadowSlots shadowSlots; // main thread
+
+	// What each shadow atlas tile currently contains (GPU thread): a tile is only drawn again
+	// when its view or the scene geometry changed.
+	std::array<internal::GpuShadowView, shadow::kMaxShadowViews> renderedViews{};
+	std::array<uint64_t, shadow::kMaxShadowViews> renderedGeometry{};
+	std::array<bool, shadow::kMaxShadowViews> renderedValid{};
+
 	~Impl();
 
 	bool initialize(const InitOptions& initOptions, std::string& error);
@@ -102,6 +120,7 @@ struct RasterPipeline::Impl {
 	bool buildGraph(std::string& error);
 	void uploadUniforms();
 	void flushUniforms();
+	uint64_t dirtyTiles(const internal::LightFrame& frame, uint32_t viewBase, uint64_t tiles);
 };
 
 }

@@ -76,7 +76,8 @@ struct PassDesc {
 
 	// Multi-view: the pass extent is split into a viewColumns x viewRows grid and the scene is
 	// drawn once per tile, with ViewPushConstants{viewBase + tile index} pushed to the vertex
-	// shader. Tiles are filled row by row; only the first RenderGraph::setActiveViews() are drawn.
+	// shader. Tiles are filled row by row. Such a pass is depth only and keeps its content between
+	// frames: only the tiles given to RenderGraph::setViews() are drawn again (at most 64 views).
 	uint32_t viewColumns = 0; // 0 = single view
 	uint32_t viewRows	 = 0;
 	uint32_t viewBase	 = 0;

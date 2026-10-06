@@ -2,6 +2,7 @@
 
 #include "renderDevice.hpp"
 
+#include <cstring>
 #include <iostream>
 
 namespace RasterCore {
@@ -24,6 +25,7 @@ RasterPipeline::Impl::~Impl() {
 
 bool RasterPipeline::Impl::initialize(const InitOptions& initOptions, std::string& error) {
 	options = initOptions;
+	shadowSlots.fill(-1);
 
 	if (!options.sharedResources || !options.sharedResources->gpu) {
 		error = "RasterCore: shared GPU resources are required";
@@ -110,7 +112,8 @@ void RasterPipeline::Impl::uploadUniforms() {
 
 	const float aspect = static_cast<float>(options.width) / static_cast<float>(options.height);
 	internal::LightFrame frame;
-	internal::buildLightFrame(frame, lights, camera, aspect, options.shadows);
+	internal::buildLightFrame(frame, lights, camera, aspect, options.shadows, shadowSlots);
+	frame.geometryVersion = options.sharedResources->geometryVersion;
 
 	std::lock_guard<std::mutex> lock(pendingMutex);
 	pendingCamera = cameraData;
@@ -134,9 +137,32 @@ void RasterPipeline::Impl::flushUniforms() {
 		lightListBuffer.upload(frame.lights.data(), frame.lights.size() * sizeof(internal::GpuLight));
 	shadowViewBuffer.upload(frame.shadowViews.data(), frame.shadowViews.size() * sizeof(internal::GpuShadowView));
 
-	// Only render the shadow views in use this frame.
-	graph.setActiveViews("sunShadow", frame.cascadeViews);
-	graph.setActiveViews("pointShadow", frame.pointViews);
+	// Shadow maps are cached: only the tiles whose content is out of date are drawn again, and
+	// not at all for a light that cannot reach the camera frustum.
+	graph.setViews("sunShadow", frame.cascadeTiles, dirtyTiles(frame, shadow::kCascadeViewBase, frame.cascadeTiles));
+	graph.setViews("pointShadow", frame.pointTiles, dirtyTiles(frame, shadow::kPointViewBase, frame.pointVisibleTiles));
+}
+
+// Among `tiles` (bit i = shadow view viewBase + i), the ones that no longer match what the atlas
+// holds; they are recorded as up to date since the next frame draws them.
+uint64_t RasterPipeline::Impl::dirtyTiles(const internal::LightFrame& frame, uint32_t viewBase, uint64_t tiles) {
+	uint64_t dirty = 0;
+	for (uint32_t tile = 0; viewBase + tile < shadow::kMaxShadowViews && tile < 64; ++tile) {
+		if (!(tiles & (1ull << tile)))
+			continue;
+
+		const uint32_t view		= viewBase + tile;
+		const auto&	   wanted	= frame.shadowViews[view];
+		const bool	   sameView = renderedValid[view] && std::memcmp(&renderedViews[view], &wanted, sizeof(wanted)) == 0;
+		if (sameView && renderedGeometry[view] == frame.geometryVersion)
+			continue;
+
+		renderedViews[view]	   = wanted;
+		renderedGeometry[view] = frame.geometryVersion;
+		renderedValid[view]	   = true;
+		dirty |= 1ull << tile;
+	}
+	return dirty;
 }
 
 // ---------------------------------------------------------------------------

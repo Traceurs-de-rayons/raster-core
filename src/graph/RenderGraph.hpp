@@ -59,9 +59,10 @@ class RenderGraph {
 	VkImage		outputImage() const;
 	VkImageView outputView() const;
 
-	// Number of views a multi-view pass draws next frame (clamped to its view count).
+	// Views (one bit per tile) of a multi-view pass: `active` are the tiles in use, `dirty` the ones
+	// to draw again in the next recorded frame; the others keep what they already contain.
 	// Safe to call from any thread.
-	void setActiveViews(const std::string& passName, uint32_t count);
+	void setViews(const std::string& passName, uint64_t active, uint64_t dirty);
 
   private:
 	struct Resource {
@@ -76,7 +77,10 @@ class RenderGraph {
 		renderApi::gpuTask::GraphicsPipeline* pipeline		= nullptr;
 		VkDescriptorSet						  descriptorSet = VK_NULL_HANDLE;
 		std::vector<size_t>					  inputs; // resource indices
-		std::unique_ptr<std::atomic<uint32_t>> activeViews; // multi-view passes only
+		std::vector<size_t>					  outputs; // resource indices
+		// Multi-view passes only: bit masks of the tiles in use / to redraw (see setViews()).
+		std::unique_ptr<std::atomic<uint64_t>> activeViews;
+		std::unique_ptr<std::atomic<uint64_t>> dirtyViews;
 	};
 
 	GraphContext							 context_;
@@ -85,6 +89,8 @@ class RenderGraph {
 	std::vector<Resource>					 resources_;
 	std::unordered_map<std::string, size_t>	 resourceIndex_;
 	size_t									 output_ = 0;
+	// Layout each resource was left in by the last recorded frame (GPU thread only).
+	mutable std::vector<VkImageLayout>		 layouts_;
 
 	bool declarePasses(const RenderGraphConfig& config, std::string& error);
 	bool createPipeline(CompiledPass& pass, uint32_t setIndex, const RenderGraphConfig& config, std::string& error);
@@ -98,7 +104,7 @@ class RenderGraph {
 
 	void record(VkCommandBuffer cmd) const;
 	void recordPass(VkCommandBuffer cmd, const CompiledPass& pass) const;
-	void recordViews(VkCommandBuffer cmd, const CompiledPass& pass) const;
+	void recordViews(VkCommandBuffer cmd, const CompiledPass& pass, uint64_t views) const;
 	void drawPassGeometry(VkCommandBuffer cmd, const CompiledPass& pass) const;
 	void drawScene(VkCommandBuffer cmd) const;
 };

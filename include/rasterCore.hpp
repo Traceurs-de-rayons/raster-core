@@ -65,6 +65,9 @@ struct SharedGpuResources {
 	uint32_t indexCount = 0;
 	uint32_t vertexCount = 0;
 	uint32_t drawCount = 0;
+	// Bumped by the owner whenever the geometry or a model matrix changes: cached shadow maps
+	// are only valid for the version they were rendered with.
+	uint64_t geometryVersion = 0;
 
 	bool isLoaded() const { return gpu != nullptr && vertexBuffer.isValid(); }
 

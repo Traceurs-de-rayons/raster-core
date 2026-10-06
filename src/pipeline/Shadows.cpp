@@ -129,14 +129,13 @@ void writeCascades(LightFrame& frame, const vec3& lightDirection, float sunAngul
 	frame.uniform.shadowParams[0] = std::tan(std::max(sunAngularDiameter, 0.0f) * 0.5f * 3.14159265f / 180.0f);
 	frame.uniform.shadowParams[1] = settings.cascadeBlend;
 	frame.uniform.counts[1]		  = kCascadeCount;
-	frame.cascadeViews			  = kCascadeCount;
+	frame.cascadeTiles			  = (1ull << kCascadeCount) - 1;
 }
 
 void writePointShadow(LightFrame& frame, uint32_t slot, const vec3& position, float intensity, float maxRange) {
 	using namespace shadow;
 
-	// Distance where the light's contribution drops below ~1/255 (see pointAttenuation in lighting.frag).
-	const float range = std::clamp(std::sqrt(std::max(intensity, 0.0f) * 255.0f / 0.032f), 1.0f, maxRange);
+	const float range = pointLightRange(intensity, maxRange);
 
 	static const vec3 kFaceDirections[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 	const float		  tanHalfFov		 = 1.0f + 2.0f * kCubeGuardTexels / kPointFaceResolution;
@@ -150,7 +149,12 @@ void writePointShadow(LightFrame& frame, uint32_t slot, const vec3& position, fl
 		writeView(view, cu::math::lookAt(position, position + direction, stableUp(direction)), proj, tile, 6, kMaxPointShadows);
 		view.params = {2.0f * tanHalfFov / kPointFaceResolution, range - kPointNear, 0.0f, 1.0f / kPointFaceResolution};
 	}
-	frame.pointViews = (slot + 1) * 6;
+	frame.pointTiles |= 0x3full << (slot * 6);
+}
+
+// Distance where the light's contribution drops below ~1/255 (see pointAttenuation in lighting.frag).
+float pointLightRange(float intensity, float maxRange) {
+	return std::clamp(std::sqrt(std::max(intensity, 0.0f) * 255.0f / 0.032f), 1.0f, maxRange);
 }
 
 }

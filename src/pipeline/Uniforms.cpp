@@ -31,32 +31,82 @@ namespace {
 		return 1.0f / (1.0f + 0.09f * distance + 0.032f * distance * distance);
 	}
 
-	// Point and spot lights that get a cube shadow: the brightest ones as seen from the camera.
-	std::vector<size_t> selectPointShadows(const std::vector<Light>& lights, size_t count, const Camera& camera) {
-		std::vector<size_t> candidates;
+	// True when a sphere touches the camera frustum.
+	bool sphereInFrustum(const Camera& camera, float aspect, const vec3& center, float radius) {
+		const vec3	forward = safeNormalize(camera.target - camera.position, {0.0f, 0.0f, -1.0f});
+		const vec3	right	= safeNormalize(vec3::cross(forward, camera.up), {1.0f, 0.0f, 0.0f});
+		const vec3	up		= vec3::cross(right, forward);
+		const float tanV	= std::tan(camera.verticalFovDegrees * 0.5f * 3.14159265f / 180.0f);
+		const float tanH	= tanV * aspect;
+
+		const vec3	toCenter = center - camera.position;
+		const float depth	 = vec3::dot(toCenter, forward);
+		if (depth < camera.nearPlane - radius || depth > camera.farPlane + radius)
+			return false;
+
+		// Signed distance to each side plane (positive inside), from its inward normal.
+		const float side	   = vec3::dot(toCenter, right);
+		const float height	   = vec3::dot(toCenter, up);
+		const float horizontal = 1.0f / std::sqrt(1.0f + tanH * tanH);
+		const float vertical   = 1.0f / std::sqrt(1.0f + tanV * tanV);
+		return (depth * tanH - side) * horizontal >= -radius && (depth * tanH + side) * horizontal >= -radius &&
+			   (depth * tanV - height) * vertical >= -radius && (depth * tanV + height) * vertical >= -radius;
+	}
+
+	struct ShadowCandidate {
+		size_t light;
+		float  score;
+		bool   visible; // its light can reach something on screen
+	};
+
+	// Gives the point and spot lights their shadow slots: the ones that reach the camera frustum
+	// first, then the brightest as seen from the camera. A light keeps the slot it already has.
+	std::vector<ShadowCandidate> assignShadowSlots(const std::vector<Light>& lights, size_t count, const Camera& camera, float aspect,
+												   const ShadowSettings& settings, ShadowSlots& slots) {
+		std::vector<ShadowCandidate> candidates;
 		for (size_t i = 0; i < count; ++i) {
-			if (lights[i].type != LightType::Directional && lights[i].castsShadow && lights[i].intensity > 0.0f)
-				candidates.push_back(i);
+			const Light& light = lights[i];
+			if (light.type == LightType::Directional || !light.castsShadow || light.intensity <= 0.0f)
+				continue;
+			const float range = pointLightRange(light.intensity, settings.maxPointShadowRange);
+			candidates.push_back({i, light.intensity * pointAttenuation((light.position - camera.position).length()),
+								  sphereInFrustum(camera, aspect, light.position, range)});
 		}
 
-		auto score = [&](size_t i) { return lights[i].intensity * pointAttenuation((lights[i].position - camera.position).length()); };
-		std::stable_sort(candidates.begin(), candidates.end(), [&](size_t a, size_t b) { return score(a) > score(b); });
+		std::stable_sort(candidates.begin(), candidates.end(), [](const ShadowCandidate& a, const ShadowCandidate& b) {
+			return a.visible != b.visible ? a.visible : a.score > b.score;
+		});
 		if (candidates.size() > shadow::kMaxPointShadows)
 			candidates.resize(shadow::kMaxPointShadows);
+
+		auto selected = [&](int light) {
+			return std::any_of(candidates.begin(), candidates.end(), [&](const ShadowCandidate& c) { return static_cast<int>(c.light) == light; });
+		};
+		for (int& owner : slots) {
+			if (owner >= 0 && !selected(owner))
+				owner = -1;
+		}
+		for (const ShadowCandidate& candidate : candidates) {
+			if (std::find(slots.begin(), slots.end(), static_cast<int>(candidate.light)) != slots.end())
+				continue;
+			*std::find(slots.begin(), slots.end(), -1) = static_cast<int>(candidate.light);
+		}
 		return candidates;
 	}
 
 }
 
-void buildLightFrame(LightFrame& out, const std::vector<Light>& lights, const Camera& camera, float aspect, const ShadowSettings& settings) {
+void buildLightFrame(LightFrame& out, const std::vector<Light>& lights, const Camera& camera, float aspect, const ShadowSettings& settings,
+					 ShadowSlots& slots) {
 	const vec3	 down{0.0f, -1.0f, 0.0f};
 	const size_t count = std::min<size_t>(lights.size(), kMaxLights);
 
 	out.uniform = {};
 	out.lights.resize(count);
 	out.shadowViews.assign(shadow::kMaxShadowViews, GpuShadowView{});
-	out.cascadeViews = 0;
-	out.pointViews	 = 0;
+	out.cascadeTiles	  = 0;
+	out.pointTiles		  = 0;
+	out.pointVisibleTiles = 0;
 
 	const vec3 cameraForward	= safeNormalize(camera.target - camera.position, {0.0f, 0.0f, -1.0f});
 	out.uniform.cameraPosition = {camera.position.x, camera.position.y, camera.position.z, 0.0f};
@@ -81,17 +131,21 @@ void buildLightFrame(LightFrame& out, const std::vector<Light>& lights, const Ca
 		}
 
 		// Cascaded shadows for the first shadow-casting directional light (suns come first).
-		if (!point && light.castsShadow && out.cascadeViews == 0) {
+		if (!point && light.castsShadow && out.cascadeTiles == 0) {
 			writeCascades(out, direction, light.angularDiameter, camera, aspect, settings);
 			out.lights[i].colorShadow[3] = static_cast<float>(shadow::kCascadeViewBase);
 		}
 	}
 
-	const std::vector<size_t> pointShadows = selectPointShadows(lights, count, camera);
-	for (uint32_t slot = 0; slot < pointShadows.size(); ++slot) {
-		const Light& light = lights[pointShadows[slot]];
+	const std::vector<ShadowCandidate> pointShadows = assignShadowSlots(lights, count, camera, aspect, settings, slots);
+	for (const ShadowCandidate& candidate : pointShadows) {
+		const Light&   light = lights[candidate.light];
+		const uint32_t slot	 = static_cast<uint32_t>(std::find(slots.begin(), slots.end(), static_cast<int>(candidate.light)) - slots.begin());
+
 		writePointShadow(out, slot, light.position, light.intensity, settings.maxPointShadowRange);
-		out.lights[pointShadows[slot]].colorShadow[3] = static_cast<float>(shadow::kPointViewBase + slot * 6);
+		out.lights[candidate.light].colorShadow[3] = static_cast<float>(shadow::kPointViewBase + slot * 6);
+		if (candidate.visible)
+			out.pointVisibleTiles |= 0x3full << (slot * 6);
 	}
 }
 

@@ -40,6 +40,7 @@ void RenderGraph::destroy() {
 	}
 	passes_.clear();
 	resources_.clear();
+	layouts_.clear();
 	resourceIndex_.clear();
 	output_ = 0;
 }
@@ -83,7 +84,12 @@ bool RenderGraph::declarePasses(const RenderGraphConfig& config, std::string& er
 				error = "RasterCore: multi-view pass '" + desc->name + "' needs a fixed extent divisible by its view grid";
 				return false;
 			}
-			pass.activeViews = std::make_unique<std::atomic<uint32_t>>(desc->viewCount());
+			if (desc->viewCount() > 64 || !desc->colorOutputs.empty() || desc->depthOutput.empty()) {
+				error = "RasterCore: multi-view pass '" + desc->name + "' must be depth only with at most 64 views";
+				return false;
+			}
+			pass.activeViews = std::make_unique<std::atomic<uint64_t>>(0);
+			pass.dirtyViews	 = std::make_unique<std::atomic<uint64_t>>(0);
 		}
 
 		auto declare = [&](const std::string& name, int attachment) {
@@ -92,6 +98,7 @@ bool RenderGraph::declarePasses(const RenderGraphConfig& config, std::string& er
 				return false;
 			}
 			resourceIndex_[name] = resources_.size();
+			pass.outputs.push_back(resources_.size());
 			resources_.push_back({name, passIndex, attachment});
 			return true;
 		};
@@ -110,6 +117,7 @@ bool RenderGraph::declarePasses(const RenderGraphConfig& config, std::string& er
 		return false;
 	}
 	output_ = it->second;
+	layouts_.assign(resources_.size(), VK_IMAGE_LAYOUT_UNDEFINED);
 	return true;
 }
 
@@ -153,6 +161,7 @@ bool RenderGraph::createPipeline(CompiledPass& pass, uint32_t setIndex, const Re
 	// Always dynamic: the pipeline then survives a resize (see resize()).
 	pipeline->setDynamicViewport(true);
 	if (desc.viewCount() > 0) {
+		pipeline->setPreserveDepth(true); // tiles that are not redrawn keep their shadow map
 		pipeline->addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ViewPushConstants));
 	}
 
@@ -293,6 +302,8 @@ bool RenderGraph::resize(uint32_t width, uint32_t height, std::string& error) {
 			error = "RasterCore: failed to resize pass '" + pass.desc.name + "'";
 			return false;
 		}
+		for (size_t index : pass.outputs)
+			layouts_[index] = VK_IMAGE_LAYOUT_UNDEFINED; // new images
 	}
 	context_.width	= width;
 	context_.height = height;
@@ -310,10 +321,14 @@ VkImageView RenderGraph::viewOf(const Resource& resource) const {
 	return resource.isDepth() ? pipeline->getDepthImageView() : pipeline->getColorImageView(static_cast<uint32_t>(resource.attachment));
 }
 
-void RenderGraph::setActiveViews(const std::string& passName, uint32_t count) {
+void RenderGraph::setViews(const std::string& passName, uint64_t active, uint64_t dirty) {
 	for (auto& pass : passes_) {
-		if (pass.desc.name == passName && pass.activeViews)
-			pass.activeViews->store(std::min(count, pass.desc.viewCount()), std::memory_order_relaxed);
+		if (pass.desc.name != passName || !pass.activeViews)
+			continue;
+		const uint64_t all = pass.desc.viewCount() >= 64 ? ~0ull : (1ull << pass.desc.viewCount()) - 1;
+		pass.activeViews->store(active & all, std::memory_order_relaxed);
+		// Accumulated: a frame that is never recorded must not lose its redraws.
+		pass.dirtyViews->fetch_or(dirty & active & all, std::memory_order_relaxed);
 	}
 }
 
@@ -327,9 +342,22 @@ VkImageView RenderGraph::outputView() const { return task_ ? viewOf(resources_[o
 
 namespace {
 
-// Layout each attachment is left in by its render pass (see render-api pipelineBuild.cpp).
-VkImageLayout attachmentLayout(bool depth) {
-	return depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL;
+// Access of an image in `layout`, as the source or the destination of a transition.
+void layoutAccess(VkImageLayout layout, bool depth, bool source, VkAccessFlags& access, VkPipelineStageFlags& stage) {
+	if (layout == VK_IMAGE_LAYOUT_UNDEFINED) {
+		access = 0;
+		stage  = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	} else if (layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+		access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | (source ? 0 : VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
+		stage  = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	} else if (layout == VK_IMAGE_LAYOUT_GENERAL && source) {
+		// Color attachments are left in GENERAL by their render pass.
+		access = depth ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		stage  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	} else {
+		access = VK_ACCESS_SHADER_READ_BIT;
+		stage  = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	}
 }
 
 void imageBarrier(VkCommandBuffer cmd, VkImage image, bool depth, VkImageLayout oldLayout, VkImageLayout newLayout) {
@@ -343,40 +371,51 @@ void imageBarrier(VkCommandBuffer cmd, VkImage image, bool depth, VkImageLayout 
 	barrier.subresourceRange.aspectMask = depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.levelCount = 1;
 	barrier.subresourceRange.layerCount = 1;
-	barrier.srcAccessMask = depth ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-	const VkPipelineStageFlags srcStage = depth ? VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
-	                                            : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	vkCmdPipelineBarrier(cmd, srcStage, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+	VkPipelineStageFlags srcStage = 0;
+	VkPipelineStageFlags dstStage = 0;
+	layoutAccess(oldLayout, depth, true, barrier.srcAccessMask, srcStage);
+	layoutAccess(newLayout, depth, false, barrier.dstAccessMask, dstStage);
+	vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
 } // namespace
 
 void RenderGraph::record(VkCommandBuffer cmd) const {
-	// Every resource is rewritten each frame, so layouts only need tracking within the frame.
-	std::vector<bool> sampled(resources_.size(), false);
-
 	for (const auto& pass : passes_) {
 		for (size_t index : pass.inputs) {
-			if (sampled[index])
+			if (layouts_[index] == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 				continue;
 			const auto& resource = resources_[index];
-			imageBarrier(cmd, imageOf(resource), resource.isDepth(), attachmentLayout(resource.isDepth()),
-			             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-			sampled[index] = true;
+			imageBarrier(cmd, imageOf(resource), resource.isDepth(), layouts_[index], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			layouts_[index] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		}
 		recordPass(cmd, pass);
 	}
 
 	// The viewport samples the output in GENERAL layout from the ImGui submission.
-	const auto& output = resources_[output_];
-	const VkImageLayout current = sampled[output_] ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL;
-	imageBarrier(cmd, imageOf(output), false, current, VK_IMAGE_LAYOUT_GENERAL);
+	imageBarrier(cmd, imageOf(resources_[output_]), false, layouts_[output_], VK_IMAGE_LAYOUT_GENERAL);
+	layouts_[output_] = VK_IMAGE_LAYOUT_GENERAL;
 }
 
 void RenderGraph::recordPass(VkCommandBuffer cmd, const CompiledPass& pass) const {
 	const auto* pipeline = pass.pipeline;
+
+	// Multi-view passes keep their content: only the requested tiles are drawn, and the whole
+	// pass is skipped when there is none.
+	uint64_t views = 0;
+	if (pass.activeViews) {
+		const size_t atlas = pass.outputs[0];
+		views = pass.dirtyViews->exchange(0, std::memory_order_relaxed);
+		if (layouts_[atlas] == VK_IMAGE_LAYOUT_UNDEFINED)
+			views = pass.activeViews->load(std::memory_order_relaxed); // nothing valid yet
+		if (views == 0)
+			return;
+
+		// The render pass loads the atlas, which a previous frame left ready to be sampled.
+		if (layouts_[atlas] != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+			imageBarrier(cmd, imageOf(resources_[atlas]), true, layouts_[atlas], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+	}
 
 	std::vector<VkClearValue> clearValues;
 	for (const auto& output : pass.desc.colorOutputs) {
@@ -401,7 +440,7 @@ void RenderGraph::recordPass(VkCommandBuffer cmd, const CompiledPass& pass) cons
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getLayout(), 0, 1, &pass.descriptorSet, 0, nullptr);
 
 	if (pass.activeViews) {
-		recordViews(cmd, pass);
+		recordViews(cmd, pass, views);
 	} else {
 		const VkViewport viewport{0.0f, 0.0f, static_cast<float>(pipeline->getWidth()), static_cast<float>(pipeline->getHeight()), 0.0f, 1.0f};
 		const VkRect2D	 scissor{{0, 0}, {pipeline->getWidth(), pipeline->getHeight()}};
@@ -411,16 +450,22 @@ void RenderGraph::recordPass(VkCommandBuffer cmd, const CompiledPass& pass) cons
 	}
 
 	vkCmdEndRenderPass(cmd);
+
+	// Layouts the render pass leaves its attachments in (see render-api pipelineBuild.cpp).
+	for (size_t index : pass.outputs)
+		layouts_[index] = resources_[index].isDepth() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL;
 }
 
-// One draw per active atlas tile, each with its own viewport and view index.
-void RenderGraph::recordViews(VkCommandBuffer cmd, const CompiledPass& pass) const {
+// One draw per requested atlas tile, each cleared first and drawn with its own viewport and view index.
+void RenderGraph::recordViews(VkCommandBuffer cmd, const CompiledPass& pass, uint64_t views) const {
 	const PassDesc& desc	   = pass.desc;
 	const uint32_t	tileWidth  = desc.width / desc.viewColumns;
 	const uint32_t	tileHeight = desc.height / desc.viewRows;
-	const uint32_t	count	   = pass.activeViews->load(std::memory_order_relaxed);
 
-	for (uint32_t i = 0; i < count; ++i) {
+	for (uint32_t i = 0; i < desc.viewCount(); ++i) {
+		if (!(views & (1ull << i)))
+			continue;
+
 		const uint32_t x = (i % desc.viewColumns) * tileWidth;
 		const uint32_t y = (i / desc.viewColumns) * tileHeight;
 
@@ -429,6 +474,12 @@ void RenderGraph::recordViews(VkCommandBuffer cmd, const CompiledPass& pass) con
 		const VkRect2D	 scissor{{static_cast<int32_t>(x), static_cast<int32_t>(y)}, {tileWidth, tileHeight}};
 		vkCmdSetViewport(cmd, 0, 1, &viewport);
 		vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+		VkClearAttachment clear{};
+		clear.aspectMask			  = VK_IMAGE_ASPECT_DEPTH_BIT;
+		clear.clearValue.depthStencil = {1.0f, 0};
+		const VkClearRect clearRect{scissor, 0, 1};
+		vkCmdClearAttachments(cmd, 1, &clear, 1, &clearRect);
 
 		const ViewPushConstants constants{desc.viewBase + i};
 		vkCmdPushConstants(cmd, pass.pipeline->getLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(constants), &constants);
