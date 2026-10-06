@@ -100,18 +100,35 @@ bool RasterPipeline::Impl::buildGraph(std::string& error) {
 	context.width			  = options.width;
 	context.height			  = options.height;
 	context.shaderSearchPaths = &options.shaderSearchPaths;
+	context.beforeRecord	  = [this] { flushUniforms(); };
 	return graph.build(options.graph, context, error);
 }
 
 void RasterPipeline::Impl::uploadUniforms() {
 	internal::CameraUniform cameraData{};
 	internal::writeCameraUniform(cameraData, camera, options.width, options.height);
-	cameraBuffer.upload(&cameraData, sizeof(cameraData));
 
 	const float aspect = static_cast<float>(options.width) / static_cast<float>(options.height);
 	internal::LightFrame frame;
 	internal::buildLightFrame(frame, lights, camera, aspect, options.shadows);
 
+	std::lock_guard<std::mutex> lock(pendingMutex);
+	pendingCamera = cameraData;
+	pendingFrame  = std::move(frame);
+	pendingDirty  = true;
+}
+
+// The shadow maps, the G-buffer and the lighting of one frame must all see the same camera and
+// shadow views: writing them while a frame is running makes the lighting pass compare against
+// shadow maps rendered from other matrices (whole cascades flash black when the camera turns).
+void RasterPipeline::Impl::flushUniforms() {
+	std::lock_guard<std::mutex> lock(pendingMutex);
+	if (!pendingDirty)
+		return;
+	pendingDirty = false;
+
+	const internal::LightFrame& frame = pendingFrame;
+	cameraBuffer.upload(&pendingCamera, sizeof(pendingCamera));
 	lightBuffer.upload(&frame.uniform, sizeof(frame.uniform));
 	if (!frame.lights.empty())
 		lightListBuffer.upload(frame.lights.data(), frame.lights.size() * sizeof(internal::GpuLight));
@@ -156,8 +173,9 @@ bool RasterPipeline::resize(uint32_t width, uint32_t height, std::string* errorM
 	impl_->options.width  = width;
 	impl_->options.height = height;
 
+	// Cheap path first; a full rebuild only if it fails.
 	std::string error;
-	if (!impl_->buildGraph(error)) {
+	if (!impl_->graph.resize(width, height, error) && !impl_->buildGraph(error)) {
 		std::cerr << error << std::endl;
 		if (errorMessage)
 			*errorMessage = error;

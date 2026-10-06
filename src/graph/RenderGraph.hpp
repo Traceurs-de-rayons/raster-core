@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -33,6 +34,9 @@ struct GraphContext {
 	uint32_t								  width		   = 0;
 	uint32_t								  height	   = 0;
 	const std::vector<std::filesystem::path>* shaderSearchPaths = nullptr;
+	// Called on the GPU thread before each frame is recorded, once the previous one has finished:
+	// the only point where the buffers read by the passes can change without tearing a frame.
+	std::function<void()>					  beforeRecord;
 };
 
 // Compiles a RenderGraphConfig into one GpuTask: one pipeline + one descriptor set per pass,
@@ -47,6 +51,10 @@ class RenderGraph {
 
 	bool build(const RenderGraphConfig& config, const GraphContext& context, std::string& error);
 	void destroy();
+
+	// New output size: only the screen-sized attachments are recreated (pipelines, shaders and
+	// fixed-extent passes such as the shadow atlases are kept).
+	bool resize(uint32_t width, uint32_t height, std::string& error);
 
 	VkImage		outputImage() const;
 	VkImageView outputView() const;
@@ -82,6 +90,7 @@ class RenderGraph {
 	bool createPipeline(CompiledPass& pass, uint32_t setIndex, const RenderGraphConfig& config, std::string& error);
 	void createDescriptorSet(const CompiledPass& pass, uint32_t setIndex);
 	void bindInputViews();
+	void clearInputViews();
 
 	VkSampler	samplerFor(const PassInput& input) const { return context_.samplers[static_cast<size_t>(input.sampler)]; }
 	VkImage		imageOf(const Resource& resource) const;

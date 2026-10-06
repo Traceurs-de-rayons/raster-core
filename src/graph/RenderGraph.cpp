@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <iostream>
+#include <mutex>
 
 namespace RasterCore::internal {
 
@@ -149,8 +150,9 @@ bool RenderGraph::createPipeline(CompiledPass& pass, uint32_t setIndex, const Re
 	pipeline->setDepthBias(desc.depthBiasConstant, desc.depthBiasSlope);
 	pipeline->setColorBlendAttachment(false);
 
+	// Always dynamic: the pipeline then survives a resize (see resize()).
+	pipeline->setDynamicViewport(true);
 	if (desc.viewCount() > 0) {
-		pipeline->setDynamicViewport(true);
 		pipeline->addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ViewPushConstants));
 	}
 
@@ -200,6 +202,16 @@ void RenderGraph::createDescriptorSet(const CompiledPass& pass, uint32_t setInde
 		set->addImageView(input.binding, VK_NULL_HANDLE, samplerFor(input), VK_SHADER_STAGE_FRAGMENT_BIT);
 }
 
+// Detaches every input so no descriptor keeps a view that is about to be destroyed.
+void RenderGraph::clearInputViews() {
+	auto* descriptorManager = task_->getDescriptorManager();
+	for (size_t i = 0; i < passes_.size(); ++i) {
+		auto* set = descriptorManager->getSet(static_cast<uint32_t>(i));
+		for (const auto& input : passes_[i].desc.inputs)
+			set->updateImageView(input.binding, VK_NULL_HANDLE, samplerFor(input));
+	}
+}
+
 void RenderGraph::bindInputViews() {
 	auto* descriptorManager = task_->getDescriptorManager();
 	for (size_t i = 0; i < passes_.size(); ++i) {
@@ -246,12 +258,45 @@ bool RenderGraph::build(const RenderGraphConfig& config, const GraphContext& con
 	}
 	bindInputViews();
 
-	task_->addRecordingCallback([this](VkCommandBuffer cmd, uint32_t, uint32_t) { record(cmd); });
+	task_->addRecordingCallback([this](VkCommandBuffer cmd, uint32_t, uint32_t) {
+		if (context_.beforeRecord)
+			context_.beforeRecord();
+		record(cmd);
+	});
 	task_->setAutoExecute(true);
 	task_->registerWithGPU();
 
 	std::cout << "RasterCore: render graph built (" << passes_.size() << " passes, output '" << resources_[output_].name << "')"
 	          << std::endl;
+	return true;
+}
+
+bool RenderGraph::resize(uint32_t width, uint32_t height, std::string& error) {
+	if (!task_ || !context_.gpu) {
+		error = "RasterCore: render graph is not built";
+		return false;
+	}
+
+	// The GPU thread holds this lock while a frame of the task is recorded and executed.
+	std::lock_guard<std::mutex> lock(context_.gpu->GpuTasksMutex);
+	// The UI may still be sampling the previous output image.
+	{
+		std::lock_guard<std::mutex> queueLock(context_.gpu->queueMutex);
+		vkDeviceWaitIdle(context_.gpu->device);
+	}
+	clearInputViews();
+
+	for (auto& pass : passes_) {
+		if (pass.desc.width && pass.desc.height)
+			continue; // fixed extent
+		if (!pass.pipeline->resize(width, height)) {
+			error = "RasterCore: failed to resize pass '" + pass.desc.name + "'";
+			return false;
+		}
+	}
+	context_.width	= width;
+	context_.height = height;
+	bindInputViews();
 	return true;
 }
 
@@ -355,10 +400,15 @@ void RenderGraph::recordPass(VkCommandBuffer cmd, const CompiledPass& pass) cons
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getPipeline());
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getLayout(), 0, 1, &pass.descriptorSet, 0, nullptr);
 
-	if (pass.activeViews)
+	if (pass.activeViews) {
 		recordViews(cmd, pass);
-	else
+	} else {
+		const VkViewport viewport{0.0f, 0.0f, static_cast<float>(pipeline->getWidth()), static_cast<float>(pipeline->getHeight()), 0.0f, 1.0f};
+		const VkRect2D	 scissor{{0, 0}, {pipeline->getWidth(), pipeline->getHeight()}};
+		vkCmdSetViewport(cmd, 0, 1, &viewport);
+		vkCmdSetScissor(cmd, 0, 1, &scissor);
 		drawPassGeometry(cmd, pass);
+	}
 
 	vkCmdEndRenderPass(cmd);
 }
