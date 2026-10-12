@@ -76,9 +76,8 @@ RenderGraphConfig& RenderGraphConfig::addPostEffect(const std::string& name, con
 	return *this;
 }
 
-RenderGraphConfig RenderGraphConfig::deferred() {
-	RenderGraphConfig graph;
-
+// Shadow atlases and G-buffer, common to every graph lighting the scene.
+static void addGeometryPasses(RenderGraphConfig& graph, VkFormat worldPosFormat = VK_FORMAT_R16G16B16A16_SFLOAT) {
 	using namespace shadow;
 
 	// Sun: cascaded shadow maps, one atlas tile per cascade.
@@ -98,20 +97,68 @@ RenderGraphConfig RenderGraphConfig::deferred() {
 	graph.addPass(PassDesc::scene("geometry", "geometry.vert.spv", "geometry.frag.spv")
 			.write("gAlbedo").clear(0.2f, 0.2f, 0.2f)
 			.write("gNormal", VK_FORMAT_R16G16B16A16_SFLOAT)
-			.write("gWorldPos", VK_FORMAT_R16G16B16A16_SFLOAT)
+			.write("gWorldPos", worldPosFormat)
 			.writeDepth("sceneDepth"));
+}
 
-	graph.addPass(PassDesc::fullscreen("lighting", "lighting.frag.spv")
-			.read(0, "gAlbedo")
+// Lighting pass reading the G-buffer and the shadow atlases (bindings of lighting_common.slang).
+static PassDesc lightingPass(std::string name, std::string fragmentShader) {
+	PassDesc pass = PassDesc::fullscreen(std::move(name), std::move(fragmentShader));
+	pass.read(0, "gAlbedo")
 			.read(1, "gNormal")
 			.read(2, "gWorldPos")
 			.read(3, "sunShadowAtlas", SamplerKind::ShadowCompare)
 			.read(4, "sunShadowAtlas", SamplerKind::Nearest) // raw depth for the PCSS blocker search
-			.read(5, "pointShadowAtlas", SamplerKind::ShadowCompare)
-			.write("lit"));
+			.read(5, "pointShadowAtlas", SamplerKind::ShadowCompare);
+	return pass;
+}
+
+// shadow -> G-buffer -> lighting -> transparency
+RenderGraphConfig RenderGraphConfig::deferred() {
+	RenderGraphConfig graph;
+	addGeometryPasses(graph);
+
+	graph.addPass(lightingPass("lighting", "lighting.frag.spv").write("lit"));
 
 	graph.output = "lit";
 	graph.addPostEffect("transparency", "transparency.frag.spv");
+	return graph;
+}
+
+// shadow -> G-buffer -> toon lighting -> outlines -> bloom -> speed effects and tone mapping
+RenderGraphConfig RenderGraphConfig::toon() {
+	constexpr VkFormat hdr = VK_FORMAT_R16G16B16A16_SFLOAT;
+	// The bloom is blurry by nature: small fixed images are enough at any window size.
+	constexpr uint32_t bloomWidth  = 480;
+	constexpr uint32_t bloomHeight = 270;
+
+	RenderGraphConfig graph;
+	// Full float positions: the grid lines are computed from them, and half floats are only
+	// precise to a couple of centimeters a few dozen units away from the origin.
+	addGeometryPasses(graph, VK_FORMAT_R32G32B32A32_SFLOAT);
+
+	graph.addPass(lightingPass("toonLighting", "toon_lighting.frag.spv").write("toonLit", hdr));
+
+	graph.addPass(PassDesc::fullscreen("outline", "toon_outline.frag.spv")
+			.read(0, "toonLit")
+			.read(1, "gNormal", SamplerKind::Nearest)
+			.read(2, "gWorldPos", SamplerKind::Nearest)
+			.write("outlined", hdr));
+
+	// Two blur sizes: a tight glow around the emissive surfaces and a wide soft one.
+	graph.addPass(PassDesc::fullscreen("bloomBright", "bloom_bright.frag.spv").read(0, "outlined").write("bloomBright", hdr).extent(bloomWidth, bloomHeight));
+	graph.addPass(PassDesc::fullscreen("bloomNearH", "bloom_blur_h.frag.spv").read(0, "bloomBright").write("bloomNearH", hdr).extent(bloomWidth, bloomHeight));
+	graph.addPass(PassDesc::fullscreen("bloomNearV", "bloom_blur_v.frag.spv").read(0, "bloomNearH").write("bloomNear", hdr).extent(bloomWidth, bloomHeight));
+	graph.addPass(PassDesc::fullscreen("bloomWideH", "bloom_blur_h.frag.spv").read(0, "bloomNear").write("bloomWideH", hdr).extent(bloomWidth / 4, bloomHeight / 4));
+	graph.addPass(PassDesc::fullscreen("bloomWideV", "bloom_blur_v.frag.spv").read(0, "bloomWideH").write("bloomWide", hdr).extent(bloomWidth / 4, bloomHeight / 4));
+
+	graph.addPass(PassDesc::fullscreen("toonFinal", "toon_final.frag.spv")
+			.read(0, "outlined")
+			.read(1, "bloomNear")
+			.read(2, "bloomWide")
+			.write("toonFinal"));
+
+	graph.output = "toonFinal";
 	return graph;
 }
 

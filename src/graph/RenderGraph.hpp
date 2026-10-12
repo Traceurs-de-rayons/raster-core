@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -64,6 +65,9 @@ class RenderGraph {
 	// Safe to call from any thread.
 	void setViews(const std::string& passName, uint64_t active, uint64_t dirty);
 
+	// Clear color of a color resource, used from the next recorded frame. Safe to call from any thread.
+	void setClearColor(const std::string& resource, const std::array<float, 4>& color);
+
   private:
 	struct Resource {
 		std::string name;
@@ -91,6 +95,7 @@ class RenderGraph {
 	size_t									 output_ = 0;
 	// Layout each resource was left in by the last recorded frame (GPU thread only).
 	mutable std::vector<VkImageLayout>		 layouts_;
+	mutable std::mutex						 clearMutex_; // clear colors are set by the app, read by the GPU thread
 
 	bool declarePasses(const RenderGraphConfig& config, std::string& error);
 	bool createPipeline(CompiledPass& pass, uint32_t setIndex, const RenderGraphConfig& config, std::string& error);

@@ -10,6 +10,7 @@
 
 #include <vulkan/vulkan_core.h>
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -56,11 +57,14 @@ inline constexpr uint32_t kMaxLights = 64;
 struct SharedGpuResources {
 	renderApi::device::GPU* gpu = nullptr;
 	renderApi::Buffer vertexBuffer;
+	renderApi::Buffer skinBuffer; // second vertex stream: 4 bone indices and 4 weights, one byte each
 	renderApi::Buffer indexBuffer;
 	renderApi::Buffer modelMatrixBuffer;
 	renderApi::Buffer materialBuffer;
 	renderApi::Buffer perDrawBuffer;
 	renderApi::Buffer drawCommandsBuffer;
+	renderApi::Buffer boneBuffer;	  // bone matrices of every skinned draw, one after the other
+	renderApi::Buffer drawInfoBuffer; // per draw: index of its first bone, bit 31 set for a view model
 	std::vector<renderApi::Texture> textures;
 	uint32_t indexCount = 0;
 	uint32_t vertexCount = 0;
@@ -69,10 +73,16 @@ struct SharedGpuResources {
 	// are only valid for the version they were rendered with.
 	uint64_t geometryVersion = 0;
 
+	// Bit of a drawInfoBuffer entry marking a view model (see Asset::setViewModel()).
+	static constexpr uint32_t kViewModelBit = 1u << 31;
+
 	bool isLoaded() const { return gpu != nullptr && vertexBuffer.isValid(); }
 
 	void destroy() {
 		vertexBuffer.destroy();
+		skinBuffer.destroy();
+		boneBuffer.destroy();
+		drawInfoBuffer.destroy();
 		indexBuffer.destroy();
 		modelMatrixBuffer.destroy();
 		materialBuffer.destroy();
@@ -92,6 +102,22 @@ struct ShadowSettings {
 	float cascadeSplitLambda = 0.8f; // cascade split blend: 0 = uniform, 1 = logarithmic
 	float cascadeBlend = 0.1f;	   // fraction of each cascade cross-faded with the next one
 	float maxPointShadowRange = 100.0f; // point light shadow maps stop at this distance
+};
+
+// Look of the toon graph (RenderGraphConfig::toon()); may change every frame.
+struct ToonParams {
+	float speedEffect = 0.0f;	   // 0..1: radial blur and vignette, driven by the player speed
+	float time = 0.0f;			   // seconds
+	float outlineStrength = 0.85f; // 0 = no outline
+	float bloomStrength = 0.9f;
+	cu::math::vec3 fogColor{0.8f, 0.85f, 0.9f};
+	float fogDensity = 0.006f;	   // per world unit
+	float fogHeight = 2.0f;		   // the fog thins out above this height
+	float gridStrength = 1.0f;	   // world-space grid on the grey surfaces
+	float bands = 1.0f;			   // steps of the shadow penumbra (1 = one clean edge)
+	float emissiveBrightness = 2.2f; // above 1.1 an emissive surface starts to bloom
+	cu::math::vec3 outlineColor{0.06f, 0.07f, 0.1f};
+	float ambient = 0.35f;
 };
 
 struct InitOptions {
@@ -136,6 +162,13 @@ class RasterPipeline {
 		Camera getCamera() const;
 		// At most kMaxLights are used; extra lights are ignored.
 		void setLights(const std::vector<Light>& lights);
+		// Color of the pixels no geometry covers.
+		void setBackgroundColor(const cu::math::vec3& color);
+		// 4 float4 handed to every shader as LightUBO::effects (shaders/frame_uniforms.slang):
+		// what they mean is up to the graph being rendered.
+		void setEffectParams(const std::array<std::array<float, 4>, 4>& params);
+		// Parameters of RenderGraphConfig::toon().
+		void setToonParams(const ToonParams& params);
 		const std::vector<Light>& getLights() const;
 
 		uint32_t width() const;

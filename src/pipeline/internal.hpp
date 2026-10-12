@@ -20,7 +20,7 @@ namespace RasterCore::internal {
 
 // Must match CameraUBO in the shaders.
 struct alignas(16) CameraUniform {
-	std::array<float, 16> model;
+	std::array<float, 16> viewModelProj; // projection of the view models
 	std::array<float, 16> view;
 	std::array<float, 16> proj;
 };
@@ -32,6 +32,7 @@ struct alignas(16) LightUniform {
 	std::array<float, 4>	cascadeSplits;	// view depth at which each cascade ends
 	std::array<float, 4>	shadowParams;	// x = tan(sun half angle), y = cascade blend fraction
 	std::array<uint32_t, 4> counts;			// x = lights, y = active cascades (0 = no sun shadow)
+	std::array<std::array<float, 4>, 4> effects; // free parameters for the graph's shaders
 };
 
 // Must match loadLight() in lighting.frag.slang: 4 float4 per light.
@@ -88,6 +89,7 @@ struct RasterPipeline::Impl {
 
 	Camera camera;
 	std::vector<Light> lights;
+	std::array<std::array<float, 4>, 4> effects{};
 
 	renderApi::Buffer cameraBuffer;
 	renderApi::Buffer lightBuffer;

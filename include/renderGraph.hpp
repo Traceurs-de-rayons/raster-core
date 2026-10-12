@@ -31,6 +31,8 @@ namespace binding {
 	inline constexpr uint32_t Light			= 21; // all passes: LightUBO (count + shadow caster)
 	inline constexpr uint32_t Lights		= 22; // all passes: StructuredBuffer<float4> (3 per light)
 	inline constexpr uint32_t ShadowViews	= 23; // all passes: StructuredBuffer<float4> (10 per shadow view)
+	inline constexpr uint32_t Bones			= 24; // Scene passes only: StructuredBuffer<float4x4> (poses of the skinned draws)
+	inline constexpr uint32_t DrawInfo		= 25; // Scene passes only: StructuredBuffer<uint> (first bone of the draw, bit 31 = view model)
 } // namespace binding
 
 // Push constants of passes rendering several views (see PassDesc::views).
@@ -111,6 +113,10 @@ struct RenderGraphConfig {
 
 	// shadow -> G-buffer -> lighting -> transparency
 	static RenderGraphConfig deferred();
+	// Stylized: shadow -> G-buffer -> toon lighting (bands, grid, emissive, fog) -> outlines
+	// -> bloom -> speed effects and tone mapping. Tuned with RasterPipeline::setToonParams();
+	// the alpha of the albedo is the emission (1 = plain surface, 0 = fully emissive).
+	static RenderGraphConfig toon();
 };
 
 } // namespace RasterCore

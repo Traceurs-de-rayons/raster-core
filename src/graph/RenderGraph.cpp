@@ -1,6 +1,7 @@
 #include "RenderGraph.hpp"
 
 #include "Helpers.hpp"
+#include "animation/Model.hpp"
 #include "descriptorSetManager.hpp"
 #include "gpuTask.hpp"
 #include "graphicsPipeline.hpp"
@@ -23,7 +24,7 @@ bool isReservedBinding(uint32_t index, PassType type) {
 	if (type != PassType::Scene)
 		return false;
 	return index == binding::SceneTextures || index == binding::ModelMatrices || index == binding::PerDraw ||
-	       index == binding::Materials;
+	       index == binding::Materials || index == binding::Bones || index == binding::DrawInfo;
 }
 
 } // namespace
@@ -170,6 +171,10 @@ bool RenderGraph::createPipeline(CompiledPass& pass, uint32_t setIndex, const Re
 		pipeline->addVertexAttribute(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos));
 		pipeline->addVertexAttribute(1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal));
 		pipeline->addVertexAttribute(2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv));
+		// Skinning stream (SharedGpuResources::skinBuffer): bone indices, then weights.
+		pipeline->addVertexBinding(1, sizeof(VertexSkin), VK_VERTEX_INPUT_RATE_VERTEX);
+		pipeline->addVertexAttribute(3, 1, VK_FORMAT_R8G8B8A8_UINT, offsetof(VertexSkin, bones));
+		pipeline->addVertexAttribute(4, 1, VK_FORMAT_R8G8B8A8_UNORM, offsetof(VertexSkin, weights));
 	}
 
 	pipeline->setVertexShader(vertexSpirv);
@@ -204,6 +209,10 @@ void RenderGraph::createDescriptorSet(const CompiledPass& pass, uint32_t setInde
 			set->addBuffer(binding::PerDraw, &scene->perDrawBuffer, DescriptorType::STORAGE_BUFFER, stages);
 		if (scene->materialBuffer.isValid())
 			set->addBuffer(binding::Materials, &scene->materialBuffer, DescriptorType::STORAGE_BUFFER, stages);
+		if (scene->boneBuffer.isValid())
+			set->addBuffer(binding::Bones, &scene->boneBuffer, DescriptorType::STORAGE_BUFFER, stages);
+		if (scene->drawInfoBuffer.isValid())
+			set->addBuffer(binding::DrawInfo, &scene->drawInfoBuffer, DescriptorType::STORAGE_BUFFER, stages);
 	}
 
 	// Input images only exist once the task is built; see bindInputViews().
@@ -332,6 +341,16 @@ void RenderGraph::setViews(const std::string& passName, uint64_t active, uint64_
 	}
 }
 
+void RenderGraph::setClearColor(const std::string& resource, const std::array<float, 4>& color) {
+	const auto it = resourceIndex_.find(resource);
+	if (it == resourceIndex_.end() || resources_[it->second].isDepth())
+		return;
+
+	const Resource&				target = resources_[it->second];
+	std::lock_guard<std::mutex> lock(clearMutex_);
+	passes_[target.pass].desc.colorOutputs[static_cast<size_t>(target.attachment)].clearColor = color;
+}
+
 VkImage RenderGraph::outputImage() const { return task_ ? imageOf(resources_[output_]) : VK_NULL_HANDLE; }
 
 VkImageView RenderGraph::outputView() const { return task_ ? viewOf(resources_[output_]) : VK_NULL_HANDLE; }
@@ -418,10 +437,13 @@ void RenderGraph::recordPass(VkCommandBuffer cmd, const CompiledPass& pass) cons
 	}
 
 	std::vector<VkClearValue> clearValues;
-	for (const auto& output : pass.desc.colorOutputs) {
-		VkClearValue value{};
-		std::copy(output.clearColor.begin(), output.clearColor.end(), value.color.float32);
-		clearValues.push_back(value);
+	{
+		std::lock_guard<std::mutex> lock(clearMutex_);
+		for (const auto& output : pass.desc.colorOutputs) {
+			VkClearValue value{};
+			std::copy(output.clearColor.begin(), output.clearColor.end(), value.color.float32);
+			clearValues.push_back(value);
+		}
 	}
 	VkClearValue depthClear{};
 	depthClear.depthStencil = {1.0f, 0};
@@ -496,12 +518,12 @@ void RenderGraph::drawPassGeometry(VkCommandBuffer cmd, const CompiledPass& pass
 
 void RenderGraph::drawScene(VkCommandBuffer cmd) const {
 	const auto* scene = context_.scene;
-	if (!scene->vertexBuffer.isValid())
+	if (!scene->vertexBuffer.isValid() || !scene->skinBuffer.isValid())
 		return;
 
-	VkBuffer	 vertexBuffer = scene->vertexBuffer.getHandle();
-	VkDeviceSize offset		  = 0;
-	vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &offset);
+	const VkBuffer	   vertexBuffers[2] = {scene->vertexBuffer.getHandle(), scene->skinBuffer.getHandle()};
+	const VkDeviceSize offsets[2]		= {0, 0};
+	vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
 
 	if (!scene->indexBuffer.isValid())
 		return;

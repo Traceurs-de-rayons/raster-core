@@ -79,7 +79,7 @@ if(SLANGC)
 		add_custom_command(
 			OUTPUT ${OUTPUT_FILE}
 			COMMAND ${SLANGC} -target spirv -stage ${STAGE} -o ${OUTPUT_FILE} ${SHADER_FILE}
-			DEPENDS ${SHADER_FILE}
+			DEPENDS ${SHADER_FILE} ${SLANG_SHADERS} # every file: some are included by others
 			COMMENT "Compiling ${SHADER_NAME} (${STAGE})"
 		)
 

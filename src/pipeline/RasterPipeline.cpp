@@ -114,6 +114,7 @@ void RasterPipeline::Impl::uploadUniforms() {
 	internal::LightFrame frame;
 	internal::buildLightFrame(frame, lights, camera, aspect, options.shadows, shadowSlots);
 	frame.geometryVersion = options.sharedResources->geometryVersion;
+	frame.uniform.effects = effects;
 
 	std::lock_guard<std::mutex> lock(pendingMutex);
 	pendingCamera = cameraData;
@@ -220,6 +221,34 @@ Camera RasterPipeline::getCamera() const { return impl_ ? impl_->camera : Camera
 void RasterPipeline::setLights(const std::vector<Light>& lights) {
 	if (impl_)
 		impl_->lights = lights;
+}
+
+void RasterPipeline::setBackgroundColor(const cu::math::vec3& color) {
+	if (!impl_)
+		return;
+
+	// The lighting pass shows the albedo clear color as is where nothing was drawn. Kept in the
+	// config too, so a graph rebuild does not lose it.
+	const std::array<float, 4> clear{color.x, color.y, color.z, 1.0f};
+	for (auto& pass : impl_->options.graph.passes)
+		for (auto& output : pass.colorOutputs)
+			if (output.name == "gAlbedo")
+				output.clearColor = clear;
+	impl_->graph.setClearColor("gAlbedo", clear);
+}
+
+void RasterPipeline::setEffectParams(const std::array<std::array<float, 4>, 4>& params) {
+	if (impl_)
+		impl_->effects = params;
+}
+
+void RasterPipeline::setToonParams(const ToonParams& p) {
+	setEffectParams({{
+		{p.speedEffect, p.time, p.outlineStrength, p.bloomStrength},
+		{p.fogColor.x, p.fogColor.y, p.fogColor.z, p.fogDensity},
+		{p.fogHeight, p.gridStrength, p.bands, p.emissiveBrightness},
+		{p.outlineColor.x, p.outlineColor.y, p.outlineColor.z, p.ambient},
+	}});
 }
 
 const std::vector<Light>& RasterPipeline::getLights() const {

@@ -46,7 +46,7 @@ compile_commands.json
 *.log
 
 # Core dumps
-core
+/core
 core.*
 
 # Temporary files

@@ -14,9 +14,11 @@ void writeCameraUniform(CameraUniform& out, const Camera& camera, uint32_t width
 	const float aspect = static_cast<float>(width) / static_cast<float>(height);
 	const float fovRad = camera.verticalFovDegrees * 3.14159265f / 180.0f;
 
-	out.model = toFloatArray(cu::math::mat4::identity());
-	out.view  = toFloatArray(cu::math::lookAt(camera.position, camera.target, camera.up));
-	out.proj  = toFloatArray(cu::math::perspective(fovRad, aspect, camera.nearPlane, camera.farPlane));
+	const float viewModelFov = camera.viewModelFovDegrees > 0.0f ? camera.viewModelFovDegrees * 3.14159265f / 180.0f : fovRad;
+
+	out.viewModelProj = toFloatArray(cu::math::perspective(viewModelFov, aspect, camera.nearPlane, camera.farPlane));
+	out.view		  = toFloatArray(cu::math::lookAt(camera.position, camera.target, camera.up));
+	out.proj		  = toFloatArray(cu::math::perspective(fovRad, aspect, camera.nearPlane, camera.farPlane));
 }
 
 namespace {
