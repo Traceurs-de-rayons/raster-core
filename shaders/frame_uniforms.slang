@@ -13,5 +13,7 @@ struct LightUBO {
   //   [1] rgb = fog color, w = fog density (per world unit)
   //   [2] x = fog height (full fog below), y = grid strength, z = shading bands, w = emissive brightness
   //   [3] rgb = outline color, w = ambient light
-  float4 effects[4];
+  //   [4] xy = center of the sight aimed through (0..1), z = its radius in screen heights
+  //       (positive: a scope, negative: a red dot sight), w = how much it shows
+  float4 effects[5];
 };

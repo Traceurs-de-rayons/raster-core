@@ -237,7 +237,7 @@ void RasterPipeline::setBackgroundColor(const cu::math::vec3& color) {
 	impl_->graph.setClearColor("gAlbedo", clear);
 }
 
-void RasterPipeline::setEffectParams(const std::array<std::array<float, 4>, 4>& params) {
+void RasterPipeline::setEffectParams(const std::array<std::array<float, 4>, 5>& params) {
 	if (impl_)
 		impl_->effects = params;
 }
@@ -248,6 +248,7 @@ void RasterPipeline::setToonParams(const ToonParams& p) {
 		{p.fogColor.x, p.fogColor.y, p.fogColor.z, p.fogDensity},
 		{p.fogHeight, p.gridStrength, p.bands, p.emissiveBrightness},
 		{p.outlineColor.x, p.outlineColor.y, p.outlineColor.z, p.ambient},
+		{p.sightX, p.sightY, p.sightRadius, p.sightStrength},
 	}});
 }
 

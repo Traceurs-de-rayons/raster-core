@@ -17,6 +17,9 @@ void writeCameraUniform(CameraUniform& out, const Camera& camera, uint32_t width
 	const float viewModelFov = camera.viewModelFovDegrees > 0.0f ? camera.viewModelFovDegrees * 3.14159265f / 180.0f : fovRad;
 
 	out.viewModelProj = toFloatArray(cu::math::perspective(viewModelFov, aspect, camera.nearPlane, camera.farPlane));
+	// Projected by nothing, a view model collapses to a point that is not drawn.
+	if (!camera.drawViewModels)
+		out.viewModelProj.fill(0.0f);
 	out.view		  = toFloatArray(cu::math::lookAt(camera.position, camera.target, camera.up));
 	out.proj		  = toFloatArray(cu::math::perspective(fovRad, aspect, camera.nearPlane, camera.farPlane));
 }

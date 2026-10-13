@@ -62,7 +62,35 @@ struct SharedGpuResources {
 	renderApi::Buffer modelMatrixBuffer;
 	renderApi::Buffer materialBuffer;
 	renderApi::Buffer perDrawBuffer;
-	renderApi::Buffer drawCommandsBuffer;
+	// The indirect draw list (one command per draw; a hidden draw has an instance count of 0).
+	// The GPU reads it while it draws a frame, so it is never written in place: a change goes
+	// into the next buffer of this ring, and the frames recorded from then on use that one
+	// (setDrawCommands()). Rewriting the buffer a frame in flight is reading hangs the GPU:
+	// seen on an AMD card, as a device lost a few seconds after things started to show and hide.
+	static constexpr size_t kDrawCommandBuffers = 4; // more than the frames that can be in flight
+	std::array<renderApi::Buffer, kDrawCommandBuffers> drawCommands;
+	uint32_t drawCommandsCurrent = 0;
+	renderApi::Buffer& drawCommandsBuffer() { return drawCommands[drawCommandsCurrent]; }
+	const renderApi::Buffer& drawCommandsBuffer() const { return drawCommands[drawCommandsCurrent]; }
+	// Makes `size` bytes of draw commands the list drawn from now on. `gpu` must be set.
+	bool setDrawCommands(const void* data, size_t size) {
+		const uint32_t next = (drawCommandsCurrent + 1) % kDrawCommandBuffers;
+		if (!drawCommands[next].isValid() || !drawCommands[next].upload(data, size))
+			return false;
+		drawCommandsCurrent = next;
+		return true;
+	}
+	// Creates the ring, every buffer holding the same list.
+	bool createDrawCommands(const void* data, size_t size) {
+		for (renderApi::Buffer& buffer : drawCommands) {
+			buffer.destroy();
+			buffer.create(gpu, size > 0 ? size : 1, renderApi::BufferType::INDIRECT, renderApi::BufferUsage::DYNAMIC);
+			if (!buffer.isValid() || (size > 0 && !buffer.upload(data, size)))
+				return false;
+		}
+		drawCommandsCurrent = 0;
+		return true;
+	}
 	renderApi::Buffer boneBuffer;	  // bone matrices of every skinned draw, one after the other
 	renderApi::Buffer drawInfoBuffer; // per draw: index of its first bone, bit 31 set for a view model
 	std::vector<renderApi::Texture> textures;
@@ -87,7 +115,8 @@ struct SharedGpuResources {
 		modelMatrixBuffer.destroy();
 		materialBuffer.destroy();
 		perDrawBuffer.destroy();
-		drawCommandsBuffer.destroy();
+		for (renderApi::Buffer& buffer : drawCommands)
+			buffer.destroy();
 		for (auto& texture : textures)
 			texture.destroy();
 		textures.clear();
@@ -118,6 +147,16 @@ struct ToonParams {
 	float emissiveBrightness = 2.2f; // above 1.1 an emissive surface starts to bloom
 	cu::math::vec3 outlineColor{0.06f, 0.07f, 0.1f};
 	float ambient = 0.35f;
+	// The sight the player aims through, drawn by the last pass: where its lens is on screen
+	// (0..1 from the top left corner), its radius as a fraction of the screen height, and how
+	// much of the effect shows (0 = none). A positive radius is a scope: a reticle, the rim of
+	// the lens, everything around it dark and blurred (the picture a scope shows is rendered
+	// with it, filling the image). A negative one is the window of a red dot sight: the dot is
+	// drawn in the middle of the screen when that window is over it.
+	float sightX = 0.5f;
+	float sightY = 0.5f;
+	float sightRadius = 0.0f;
+	float sightStrength = 0.0f;
 };
 
 struct InitOptions {
@@ -164,9 +203,9 @@ class RasterPipeline {
 		void setLights(const std::vector<Light>& lights);
 		// Color of the pixels no geometry covers.
 		void setBackgroundColor(const cu::math::vec3& color);
-		// 4 float4 handed to every shader as LightUBO::effects (shaders/frame_uniforms.slang):
+		// 5 float4 handed to every shader as LightUBO::effects (shaders/frame_uniforms.slang):
 		// what they mean is up to the graph being rendered.
-		void setEffectParams(const std::array<std::array<float, 4>, 4>& params);
+		void setEffectParams(const std::array<std::array<float, 4>, 5>& params);
 		// Parameters of RenderGraphConfig::toon().
 		void setToonParams(const ToonParams& params);
 		const std::vector<Light>& getLights() const;

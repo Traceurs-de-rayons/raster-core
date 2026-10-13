@@ -13,6 +13,9 @@ struct Camera {
 	// Field of view the view models are drawn with (first person arms keep their shape when the
 	// player changes the field of view of the game); 0 = same as verticalFovDegrees.
 	float viewModelFovDegrees = 0.0f;
+	// False leaves the view models out of what this camera sees: the picture inside a scope
+	// must not show the rifle it sits on.
+	bool drawViewModels = true;
 	float nearPlane = 0.1f;
 	float farPlane = 10000.0f;
 };

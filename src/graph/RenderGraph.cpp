@@ -529,8 +529,8 @@ void RenderGraph::drawScene(VkCommandBuffer cmd) const {
 		return;
 	vkCmdBindIndexBuffer(cmd, scene->indexBuffer.getHandle(), 0, VK_INDEX_TYPE_UINT32);
 
-	if (scene->drawCount > 0 && scene->drawCommandsBuffer.isValid())
-		vkCmdDrawIndexedIndirect(cmd, scene->drawCommandsBuffer.getHandle(), 0, scene->drawCount, sizeof(VkDrawIndexedIndirectCommand));
+	if (scene->drawCount > 0 && scene->drawCommandsBuffer().isValid())
+		vkCmdDrawIndexedIndirect(cmd, scene->drawCommandsBuffer().getHandle(), 0, scene->drawCount, sizeof(VkDrawIndexedIndirectCommand));
 	else
 		vkCmdDrawIndexed(cmd, scene->indexCount, 1, 0, 0, 0);
 }
