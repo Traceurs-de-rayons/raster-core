@@ -15,5 +15,8 @@ struct LightUBO {
   //   [3] rgb = outline color, w = ambient light
   //   [4] xy = center of the sight aimed through (0..1), z = its radius in screen heights
   //       (positive: a scope, negative: a red dot sight), w = how much it shows
-  float4 effects[5];
+  //   [5] x = vignette, y = chromatic aberration, z = film grain, w = sharpening
+  //   [6] x = saturation, y = contrast, z = exposure, w = low health 0..1
+  //   [7] rgb = color filter (multiplies), w = damage flash 0..1
+  float4 effects[8];
 };

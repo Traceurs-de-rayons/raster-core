@@ -157,6 +157,18 @@ struct ToonParams {
 	float sightY = 0.5f;
 	float sightRadius = 0.0f;
 	float sightStrength = 0.0f;
+	// The grade of the picture, in the last pass. Neutral at these defaults.
+	float vignette = 1.0f;			  // the darkening of the corners (1 = as made)
+	float chromaticAberration = 0.0f; // 0..1: red and blue pulled apart toward the edges
+	float filmGrain = 0.0f;			  // 0..1
+	float sharpen = 0.0f;			  // 0..1
+	float saturation = 1.0f;		  // 0 = grey
+	float contrast = 1.0f;
+	float exposure = 1.0f;
+	cu::math::vec3 colorFilter{1.0f, 1.0f, 1.0f}; // multiplies the picture
+	// What happens to the player: 0..1.
+	float lowHealth = 0.0f; // the picture loses its color and the edges pulse red
+	float damage = 0.0f;	// a red flash at the edges, just hit
 };
 
 struct InitOptions {
@@ -203,9 +215,9 @@ class RasterPipeline {
 		void setLights(const std::vector<Light>& lights);
 		// Color of the pixels no geometry covers.
 		void setBackgroundColor(const cu::math::vec3& color);
-		// 5 float4 handed to every shader as LightUBO::effects (shaders/frame_uniforms.slang):
+		// 8 float4 handed to every shader as LightUBO::effects (shaders/frame_uniforms.slang):
 		// what they mean is up to the graph being rendered.
-		void setEffectParams(const std::array<std::array<float, 4>, 5>& params);
+		void setEffectParams(const std::array<std::array<float, 4>, 8>& params);
 		// Parameters of RenderGraphConfig::toon().
 		void setToonParams(const ToonParams& params);
 		const std::vector<Light>& getLights() const;
