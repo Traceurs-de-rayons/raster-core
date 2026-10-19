@@ -289,6 +289,24 @@ bool RenderGraph::build(const RenderGraphConfig& config, const GraphContext& con
 	return true;
 }
 
+void RenderGraph::refreshSceneBindings() {
+	if (!task_ || !context_.scene)
+		return;
+	std::vector<renderApi::Texture*> textures;
+	textures.reserve(context_.scene->textures.size());
+	for (auto& texture : context_.scene->textures)
+		textures.push_back(&texture);
+
+	auto* descriptorManager = task_->getDescriptorManager();
+	for (size_t i = 0; i < passes_.size(); ++i) {
+		if (passes_[i].desc.type != PassType::Scene)
+			continue;
+		auto* set = descriptorManager->getSet(static_cast<uint32_t>(i));
+		set->setTextureArray(binding::SceneTextures, textures);
+		set->update();
+	}
+}
+
 bool RenderGraph::resize(uint32_t width, uint32_t height, std::string& error) {
 	if (!task_ || !context_.gpu) {
 		error = "RasterCore: render graph is not built";
@@ -296,7 +314,7 @@ bool RenderGraph::resize(uint32_t width, uint32_t height, std::string& error) {
 	}
 
 	// The GPU thread holds this lock while a frame of the task is recorded and executed.
-	std::lock_guard<std::mutex> lock(context_.gpu->GpuTasksMutex);
+	const auto lock = context_.gpu->lockTasks();
 	// The UI may still be sampling the previous output image.
 	{
 		std::lock_guard<std::mutex> queueLock(context_.gpu->queueMutex);

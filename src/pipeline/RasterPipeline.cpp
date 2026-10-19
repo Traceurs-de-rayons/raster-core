@@ -242,6 +242,11 @@ void RasterPipeline::setEffectParams(const std::array<std::array<float, 4>, 8>& 
 		impl_->effects = params;
 }
 
+void RasterPipeline::refreshSceneBindings() {
+	if (impl_)
+		impl_->graph.refreshSceneBindings();
+}
+
 void RasterPipeline::setToonParams(const ToonParams& p) {
 	setEffectParams({{
 		{p.speedEffect, p.time, p.outlineStrength, p.bloomStrength},

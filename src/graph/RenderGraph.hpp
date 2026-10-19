@@ -57,6 +57,11 @@ class RenderGraph {
 	// fixed-extent passes such as the shadow atlases are kept).
 	bool resize(uint32_t width, uint32_t height, std::string& error);
 
+	// The buffers or textures of the scene (GraphContext::scene) were replaced: the scene passes
+	// read them from their next frame. Only while no frame of the task is recorded or executing
+	// (the caller holds GPU::GpuTasksMutex).
+	void refreshSceneBindings();
+
 	VkImage		outputImage() const;
 	VkImageView outputView() const;
 

@@ -10,6 +10,7 @@
 
 #include <vulkan/vulkan_core.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -80,11 +81,13 @@ struct SharedGpuResources {
 		drawCommandsCurrent = next;
 		return true;
 	}
-	// Creates the ring, every buffer holding the same list.
-	bool createDrawCommands(const void* data, size_t size) {
+	// Creates the ring, every buffer holding the same list, with room for `capacity` bytes (at
+	// least `size`): a longer list later only goes through setDrawCommands().
+	bool createDrawCommands(const void* data, size_t size, size_t capacity = 0) {
+		capacity = std::max(capacity, size);
 		for (renderApi::Buffer& buffer : drawCommands) {
 			buffer.destroy();
-			buffer.create(gpu, size > 0 ? size : 1, renderApi::BufferType::INDIRECT, renderApi::BufferUsage::DYNAMIC);
+			buffer.create(gpu, capacity > 0 ? capacity : 1, renderApi::BufferType::INDIRECT, renderApi::BufferUsage::DYNAMIC);
 			if (!buffer.isValid() || (size > 0 && !buffer.upload(data, size)))
 				return false;
 		}
@@ -208,6 +211,10 @@ class RasterPipeline {
 		// Uploads per-frame uniforms; the GPU thread renders the passes on its own.
 		void drawFrame();
 		bool resize(uint32_t width, uint32_t height, std::string* errorMessage = nullptr);
+		// The buffers or textures of SharedGpuResources were replaced (a scene that grew): the next
+		// frames read the new ones. Only while no frame is recorded or executing (the caller holds
+		// GPU::GpuTasksMutex); nothing else is rebuilt.
+		void refreshSceneBindings();
 
 		void setCamera(const Camera& camera);
 		Camera getCamera() const;
