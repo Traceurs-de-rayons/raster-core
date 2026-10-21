@@ -20,6 +20,9 @@ struct FragmentOutput {
   float4 material : SV_Target3; // x = occlusion, y = roughness, z = metallic, w = emission
 };
 
+// The material as the buffer holds it: four rows of four 32-bit values, the layout of
+// SceneDescriptor's GpuMaterial. Read as raw float4 (radv crashes compiling Slang's
+// StructuredBuffer<struct>, see lighting_common.slang), and put back together here.
 struct GpuMaterial {
   float4 tint;      // rgb = albedo tint, a = tiles per world unit
   float4 params;    // x = roughness, y = metallic, z = occlusion, w = normal intensity
@@ -36,7 +39,16 @@ static const uint kCutout = 4;
 Sampler2D textures[128];
 
 [[vk::binding(19, 0)]]
-StructuredBuffer<GpuMaterial> materials;
+StructuredBuffer<float4> materialData; // 4 float4 per material
+
+GpuMaterial loadMaterial(uint index) {
+  GpuMaterial material;
+  material.tint = materialData[index * 4 + 0];
+  material.params = materialData[index * 4 + 1];
+  material.emission = materialData[index * 4 + 2];
+  material.textures = asuint(materialData[index * 4 + 3]);
+  return material;
+}
 
 // The tangent frame of a surface, built from what the screen gives us (the derivatives of the
 // world position and of the UVs): no tangent has to be stored with the vertices. See Christian
@@ -68,7 +80,7 @@ float3 applyNormalMap(float3 n, float2 uv, float3 worldPos, float3 sampled) {
 [shader("fragment")]
 FragmentOutput main(VertexOutput input) {
   FragmentOutput output;
-  GpuMaterial material = materials[input.materialId];
+  GpuMaterial material = loadMaterial(input.materialId);
 
   // The UVs of the map are in metres; a material says how many tiles that is.
   float2 uv = input.texCoord * material.tint.a;
