@@ -2,7 +2,7 @@
 //  - sun / main directional light: cascaded shadow maps + PCSS soft shadows (contact hardening)
 //  - point and spot lights: cube shadow maps (6 atlas tiles per light) + rotated Poisson PCF
 // Layouts mirror RasterCore::internal (pipeline/internal.hpp) and shadow::* (core/ShadowLayout.hpp).
-// The including pass must read the G-buffer and the shadow atlases at bindings 0 to 5.
+// The including pass must read the G-buffer (bindings 0 to 2 and 6) and the shadow atlases (3 to 5).
 
 #include "frame_uniforms.slang"
 
@@ -12,10 +12,29 @@
 [[vk::binding(3, 0)]] Sampler2DShadow sunShadow;    // comparison sampler (hardware PCF)
 [[vk::binding(4, 0)]] Sampler2D sunShadowDepth;     // raw depth, nearest (blocker search)
 [[vk::binding(5, 0)]] Sampler2DShadow pointShadow;  // comparison sampler (hardware PCF)
+[[vk::binding(6, 0)]] Sampler2D gMaterial;          // x = occlusion, y = roughness, z = metallic, w = emission
 [[vk::binding(21, 0)]] ConstantBuffer<LightUBO> lighting; // RasterCore::binding::Light
 // Raw float4 arrays: radv crashes compiling Slang's StructuredBuffer<struct>.
 [[vk::binding(22, 0)]] StructuredBuffer<float4> lightData;   // 4 float4 per light
 [[vk::binding(23, 0)]] StructuredBuffer<float4> shadowViews; // 10 float4 per view
+
+// What the geometry pass found out about the surface: see geometry.frag.slang.
+struct SurfaceMaterial {
+  float occlusion;
+  float roughness;
+  float metallic;
+  float emission; // 0 = plain surface, 1 = fully emissive
+};
+
+SurfaceMaterial loadMaterial(float2 texCoord) {
+  float4 packed = gMaterial.Sample(texCoord);
+  SurfaceMaterial material;
+  material.occlusion = saturate(packed.x);
+  material.roughness = clamp(packed.y, 0.04, 1.0);
+  material.metallic = saturate(packed.z);
+  material.emission = saturate(packed.w);
+  return material;
+}
 
 static const float kAmbient = 0.15;
 static const uint kCascadeCount = 4;

@@ -20,8 +20,14 @@ FragmentOutput main(float4 fragCoord : SV_Position, float2 texCoord : TEXCOORD) 
   float3 normal = normalize(encodedNormal * 2.0 - 1.0);
   float3 worldPos = gWorldPos.Sample(texCoord).xyz;
   float2x2 rotation = randomRotation(fragCoord.xy);
+  SurfaceMaterial material = loadMaterial(texCoord);
 
-  float3 lit = float3(0.0);
+  float3 toView = normalize(lighting.cameraPosition.xyz - worldPos);
+  float gloss = 1.0 - material.roughness;
+  float highlightPower = exp2(2.0 + 9.0 * gloss);
+  float3 specularColor = lerp(float3(0.04, 0.04, 0.04), albedo, material.metallic);
+
+  float3 direct = float3(0.0);
   for (uint i = 0; i < lighting.counts.x; ++i) {
     GpuLight light = loadLight(i);
 
@@ -45,9 +51,17 @@ FragmentOutput main(float4 fragCoord : SV_Position, float2 texCoord : TEXCOORD) 
       shadow = light.isPoint ? pointShadowFactor(light, worldPos, normal, ndl, rotation)
                              : sunShadowFactor(worldPos, normal, ndl, rotation);
 
-    lit += light.color * light.intensity * attenuation * ndl * shadow;
+    // A metal has no diffuse: what it sends back is the highlight, tinted by its color.
+    float3 halfway = normalize(toLight + toView);
+    float highlight = pow(saturate(dot(normal, halfway)), highlightPower) * (highlightPower + 2.0) / 8.0;
+    float3 diffuse = albedo * (1.0 - material.metallic) * ndl;
+    direct += light.color * light.intensity * attenuation * shadow * (diffuse + specularColor * highlight * (1.0 - material.roughness));
   }
 
-  output.color = float4(albedo * (lit + kAmbient), 1.0);
+  // A metal has nothing diffuse: what it shows of the sky is its own color, as sharp as its
+  // roughness (there is no environment map to reflect).
+  float3 ambientDiffuse = albedo * kAmbient * (1.0 - material.metallic);
+  float3 ambientSpecular = albedo * kAmbient * (1.0 - material.roughness) * material.metallic;
+  output.color = float4(direct + (ambientDiffuse + ambientSpecular) * material.occlusion, 1.0);
   return output;
 }

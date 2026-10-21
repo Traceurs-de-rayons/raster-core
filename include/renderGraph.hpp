@@ -27,7 +27,7 @@ namespace binding {
 	inline constexpr uint32_t Camera		= 16; // all passes: CameraUBO
 	inline constexpr uint32_t ModelMatrices = 17; // Scene passes only: StructuredBuffer<float4x4>
 	inline constexpr uint32_t PerDraw		= 18; // Scene passes only: StructuredBuffer<uint> (material id)
-	inline constexpr uint32_t Materials		= 19; // Scene passes only: StructuredBuffer<uint> (texture index)
+	inline constexpr uint32_t Materials		= 19; // Scene passes only: StructuredBuffer<GpuMaterial> (64 bytes each)
 	inline constexpr uint32_t Light			= 21; // all passes: LightUBO (count + shadow caster)
 	inline constexpr uint32_t Lights		= 22; // all passes: StructuredBuffer<float4> (3 per light)
 	inline constexpr uint32_t ShadowViews	= 23; // all passes: StructuredBuffer<float4> (10 per shadow view)
@@ -115,7 +115,8 @@ struct RenderGraphConfig {
 	static RenderGraphConfig deferred();
 	// Stylized: shadow -> G-buffer -> toon lighting (bands, grid, emissive, fog) -> outlines
 	// -> bloom -> speed effects and tone mapping. Tuned with RasterPipeline::setToonParams();
-	// the alpha of the albedo is the emission (1 = plain surface, 0 = fully emissive).
+	// the material of a surface (occlusion, roughness, metallic, emission) is read from the
+	// G-buffer, see geometry.frag.slang.
 	static RenderGraphConfig toon();
 };
 

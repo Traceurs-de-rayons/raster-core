@@ -98,6 +98,7 @@ static void addGeometryPasses(RenderGraphConfig& graph, VkFormat worldPosFormat 
 			.write("gAlbedo").clear(0.2f, 0.2f, 0.2f)
 			.write("gNormal", VK_FORMAT_R16G16B16A16_SFLOAT)
 			.write("gWorldPos", worldPosFormat)
+			.write("gMaterial", VK_FORMAT_R8G8B8A8_UNORM) // occlusion, roughness, metallic, emission
 			.writeDepth("sceneDepth"));
 }
 
@@ -109,7 +110,8 @@ static PassDesc lightingPass(std::string name, std::string fragmentShader) {
 			.read(2, "gWorldPos")
 			.read(3, "sunShadowAtlas", SamplerKind::ShadowCompare)
 			.read(4, "sunShadowAtlas", SamplerKind::Nearest) // raw depth for the PCSS blocker search
-			.read(5, "pointShadowAtlas", SamplerKind::ShadowCompare);
+			.read(5, "pointShadowAtlas", SamplerKind::ShadowCompare)
+			.read(6, "gMaterial", SamplerKind::Nearest);
 	return pass;
 }
 
